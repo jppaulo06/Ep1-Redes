@@ -12,19 +12,18 @@
 #include <unistd.h>
 
 /* modified */
-#include "ampq.h"
 #include <assert.h>
+#include "imqp.h"
 
 #define LISTENQ 1
 #define MAXDATASIZE 100
 #define MAXLINE 4096
 
+#define AMQP_PORT 5672
+
 int main (int argc, char **argv) {
     int listenfd, connfd;
     struct sockaddr_in servaddr = {0};
-    pid_t childpid;
-    char recvbuffer[MAXLINE + 1];
-    ssize_t n;
 
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("socket :(\n");
@@ -54,25 +53,11 @@ int main (int argc, char **argv) {
             exit(5);
         }
         
-        printf("[Uma conexão aberta]\n");
-
-        /* Initialize connection */
+        printf("[Uma conexão aberta] %d\n", connfd);
 
         Connection *connection = new_AMQP_Connection(connfd);
 
-        int method = connection_get_method(connection);
-
-        switch(method){
-          case 
-        }
-
-
-        if((n = read(connfd, recvbuffer, MAXLINE)) > 0) {
-          printf("%s", recvbuffer);
-        }
-        else {
-          assert(0 && "Read error not implemented yet");
-        }
+        process_action(connection);
 
         close(connfd);
     }
