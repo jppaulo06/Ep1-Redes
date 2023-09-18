@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [[ $# -ne 2 ]]; then
+  printf "ERROR!\nUsage: ./test.sh <queue-name> <body>\n"
+  exit 1
+fi
+
+amqp-publish -r "$1" -b "$2"

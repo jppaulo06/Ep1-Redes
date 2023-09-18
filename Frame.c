@@ -5,6 +5,7 @@
 #include "Connection.h"
 #include "Queue.h"
 #include "Channel.h"
+#include "Basic.h"
 #include "super_header.h"
 
 /*====================================*/
@@ -205,6 +206,9 @@ void process_method_frame(Connection *connection, IMQP_Frame *frame) {
     break;
   case CHANNEL_CLASS:
     process_frame_channel(connection, frame);
+    break;
+  case BASIC_CLASS:
+    process_frame_basic(connection, frame);
     break;
   default:
     THROW("Not suported class");

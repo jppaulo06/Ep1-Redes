@@ -1,6 +1,8 @@
 #include <stdio.h>
-#include "Queue.h"
+#include <string.h>
+
 #include "Frame.h"
+#include "Queue.h"
 #include "super_header.h"
 
 /*====================================*/
@@ -30,7 +32,7 @@ typedef struct {
   int max_connections;
   int total_connections;
   int round_robin;
-  Connection *connections;
+  Connection **connections;
 } IMQP_Queue;
 
 typedef struct {
@@ -53,7 +55,11 @@ static IMQP_Queue_List *queue_list;
 static IMQP_Queue_List *new_IMQP_Queue_List();
 static IMQP_Queue *new_IMQP_Queue(IMQP_Argument *argument);
 static void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
+
 static void add_to_queue_list(IMQP_Queue *queue);
+static void add_to_queue(IMQP_Queue *queue, Connection *connection);
+
+static Connection *get_next_connection_from_queue(IMQP_Queue *queue);
 static void print_queue_list();
 
 /*====================================*/
@@ -81,6 +87,25 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
   }
 }
 
+Connection *get_connection_from_queue(const char *queue_name) {
+  for (int i = 0; i < queue_list->total_queues; i++) {
+    IMQP_Queue *queue = queue_list->list[i];
+    if (strcmp(queue->name, queue_name) == 0) {
+      return get_next_connection_from_queue(queue);
+    }
+  }
+  return NULL;
+}
+
+void put_into_queue(Connection *connection, const char *queue_name) {
+  for (int i = 0; i < queue_list->total_queues; i++) {
+    IMQP_Queue *queue = queue_list->list[i];
+    if (strcmp(queue->name, queue_name) == 0) {
+      add_to_queue(queue, connection);
+    }
+  }
+}
+
 /*====================================*/
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
@@ -88,7 +113,7 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
 IMQP_Queue_List *new_IMQP_Queue_List() {
   queue_list = Malloc(sizeof(*queue_list));
   queue_list->list =
-      Malloc(sizeof(IMQP_Queue*) * INITIAL_MAX_CONNECTIONS_QUEUES);
+      Malloc(sizeof(IMQP_Queue *) * INITIAL_MAX_CONNECTIONS_QUEUES);
 
   queue_list->max_queues = INITIAL_MAX_CONNECTIONS;
   queue_list->total_queues = 0;
@@ -118,13 +143,28 @@ IMQP_Queue *new_IMQP_Queue(IMQP_Argument *arguments) {
   return queue;
 }
 
-void add_to_queue_list(IMQP_Queue *queue){
-  if(queue_list->total_queues == queue_list->max_queues){
+void add_to_queue_list(IMQP_Queue *queue) {
+  for (int i = 0; i < queue_list->total_queues; i++) {
+    IMQP_Queue *saved_queue = queue_list->list[i];
+    if (strcmp(saved_queue->name, queue->name) == 0) {
+      return;
+    }
+  }
+  if (queue_list->total_queues == queue_list->max_queues) {
     queue_list->max_queues *= 2;
     queue_list->list = realloc(queue_list->list, queue_list->max_queues);
   }
   queue_list->list[queue_list->total_queues] = queue;
   queue_list->total_queues += 1;
+}
+
+void add_to_queue(IMQP_Queue *queue, Connection *connection) {
+  if (queue->total_connections == queue->max_connections) {
+    queue->max_connections *= 2;
+    queue->connections = realloc(queue->connections, queue->max_connections);
+  }
+  queue->connections[queue->total_connections] = connection;
+  queue->total_connections += 1;
 }
 
 void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
@@ -164,12 +204,21 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
   Write(connection->socket, (const char *)message, index - (void *)message);
 }
 
+Connection *get_next_connection_from_queue(IMQP_Queue *queue) {
+  if (queue->round_robin < queue->total_connections) {
+    Connection *connection = queue->connections[queue->round_robin];
+    queue->round_robin = (queue->round_robin + 1) % queue->total_connections;
+    return connection;
+  }
+  return NULL;
+}
+
 void print_queue_list() {
-  for(int i = 0; i < queue_list->total_queues; i++){
-    IMQP_Queue* queue = queue_list->list[i];
+  for (int i = 0; i < queue_list->total_queues; i++) {
+    IMQP_Queue *queue = queue_list->list[i];
     printf("\n%d Nome: %s\n", i, queue->name);
-    for(int j = 0; j < queue->total_connections; j++){
-      printf("    %d.%d Socket: %d\n", i, j, queue->connections[j].socket);
+    for (int j = 0; j < queue->total_connections; j++) {
+      printf("    %d.%d Socket: %d\n", i, j, queue->connections[j]->socket);
     }
   }
 }

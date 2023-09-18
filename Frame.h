@@ -29,6 +29,7 @@ enum IMQP_Frame_Method_Class {
   CONNECTION_CLASS = 10,
   CHANNEL_CLASS = 20,
   QUEUE_CLASS = 50,
+  BASIC_CLASS = 60,
 };
 
 /*====================================*/
