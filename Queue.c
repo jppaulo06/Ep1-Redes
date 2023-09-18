@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "Queue.h"
 #include "Frame.h"
 #include "super_header.h"
@@ -7,6 +8,7 @@
 /*====================================*/
 
 #define INITIAL_MAX_CONNECTIONS 1000
+#define INITIAL_MAX_CONNECTIONS_QUEUES 20
 
 /*====================================*/
 /* PRIVATE ENUMS */
@@ -33,15 +35,26 @@ typedef struct {
 
 typedef struct {
   int total_connections;
-  IMQP_Queue *list;
+  int max_queues;
+  int total_queues;
+  IMQP_Queue **list;
 } IMQP_Queue_List;
+
+/*====================================*/
+/* PRIVATE VARIABLES */
+/*====================================*/
+
+static IMQP_Queue_List *queue_list;
 
 /*====================================*/
 /* PRIVATE FUNCTIONS DECLARATIONS */
 /*====================================*/
 
+static IMQP_Queue_List *new_IMQP_Queue_List();
 static IMQP_Queue *new_IMQP_Queue(IMQP_Argument *argument);
 static void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
+static void add_to_queue_list(IMQP_Queue *queue);
+static void print_queue_list();
 
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
@@ -52,8 +65,12 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
   IMQP_Queue *queue = NULL;
   switch ((enum IMQP_Frame_Queue)frame->method) {
   case QUEUE_DECLARE:
+    if (queue_list == NULL) {
+      queue_list = new_IMQP_Queue_List();
+    }
+    print_queue_list();
     queue = new_IMQP_Queue(arguments);
-    // add_to_queue_list(queue);
+    add_to_queue_list(queue);
     send_queue_declare_ok(connection, queue);
     break;
   case QUEUE_DECLARE_OK:
@@ -67,6 +84,17 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
 /*====================================*/
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
+
+IMQP_Queue_List *new_IMQP_Queue_List() {
+  queue_list = Malloc(sizeof(*queue_list));
+  queue_list->list =
+      Malloc(sizeof(IMQP_Queue*) * INITIAL_MAX_CONNECTIONS_QUEUES);
+
+  queue_list->max_queues = INITIAL_MAX_CONNECTIONS;
+  queue_list->total_queues = 0;
+
+  return queue_list;
+}
 
 IMQP_Queue *new_IMQP_Queue(IMQP_Argument *arguments) {
   IMQP_Queue *queue = Malloc(sizeof(*queue));
@@ -88,6 +116,15 @@ IMQP_Queue *new_IMQP_Queue(IMQP_Argument *arguments) {
   queue->round_robin = 0;
 
   return queue;
+}
+
+void add_to_queue_list(IMQP_Queue *queue){
+  if(queue_list->total_queues == queue_list->max_queues){
+    queue_list->max_queues *= 2;
+    queue_list->list = realloc(queue_list->list, queue_list->max_queues);
+  }
+  queue_list->list[queue_list->total_queues] = queue;
+  queue_list->total_queues += 1;
 }
 
 void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
@@ -125,4 +162,14 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
   message_build_b(&index, FRAME_END);
 
   Write(connection->socket, (const char *)message, index - (void *)message);
+}
+
+void print_queue_list() {
+  for(int i = 0; i < queue_list->total_queues; i++){
+    IMQP_Queue* queue = queue_list->list[i];
+    printf("\n%d Nome: %s\n", i, queue->name);
+    for(int j = 0; j < queue->total_connections; j++){
+      printf("    %d.%d Socket: %d\n", i, j, queue->connections[j].socket);
+    }
+  }
 }
