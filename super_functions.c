@@ -6,6 +6,16 @@
 #define MAX_ERROR_STRING 500
 #endif
 
+/*====================================*/
+/* DEPENDENCIES */
+/*====================================*/
+
+#include "super_header.h"
+
+/*====================================*/
+/* FUNCTIONS */
+/*====================================*/
+
 void Throw(const char *CUSTOM_ERROR_STRING, const char *file,
            const char *function, int line) {
   char *FULL_ERROR_STRING = malloc(MAX_ERROR_STRING);

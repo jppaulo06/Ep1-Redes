@@ -1,18 +1,26 @@
-#ifndef SUPER_MACROS_H
-#define SUPER_MACROS_H
+#ifndef SUPER_HEADER_H
+#define SUPER_HEADER_H
+
+/*====================================*/
+/* DEPENDENCIES */
+/*====================================*/
 
 #include <stdlib.h>
 
-extern void Throw(const char *CUSTOM_ERROR_STRING, const char *file,
+/*====================================*/
+/* SUPER FUNCTIONS */
+/*====================================*/
+
+void Throw(const char *CUSTOM_ERROR_STRING, const char *file,
                   const char *function, int line);
 
-extern ssize_t Read_func(int fildes, const char *buf, size_t nbyte,
+ssize_t Read_func(int fildes, const char *buf, size_t nbyte,
                          const char *file, const char *function, int line);
 
-extern ssize_t Write_func(int fildes, const char *buf, size_t nbyte,
+ssize_t Write_func(int fildes, const char *buf, size_t nbyte,
                           const char *file, const char *function, int line);
 
-extern void *Malloc_func(size_t size, const char *file, const char *function,
+void *Malloc_func(size_t size, const char *file, const char *function,
                          int line);
 
 #define THROW(CUSTOM_ERROR_STRING)                                             \
@@ -28,4 +36,4 @@ extern void *Malloc_func(size_t size, const char *file, const char *function,
 
 #define Malloc(size) Malloc_func(size, __FILE__, __FUNCTION__, __LINE__)
 
-#endif
+#endif /* SUPER_HEADER_H */

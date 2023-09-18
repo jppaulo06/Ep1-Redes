@@ -13,13 +13,15 @@
 
 /* modified */
 #include <assert.h>
-#include "imqp.h"
+#include "Connection.h"
 
 #define LISTENQ 1
 #define MAXDATASIZE 100
 #define MAXLINE 4096
 
 #define AMQP_PORT 5672
+
+#include "Connection.h"
 
 int main (int argc, char **argv) {
     int listenfd, connfd;
@@ -55,9 +57,7 @@ int main (int argc, char **argv) {
         
         printf("[Uma conexão aberta] %d\n", connfd);
 
-        Connection *connection = new_AMQP_Connection(connfd);
-
-        process_action(connection);
+        process_connection(connfd);
 
         close(connfd);
     }

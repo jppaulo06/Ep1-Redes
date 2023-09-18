@@ -6,7 +6,8 @@ ARFLAGS= -rcv
 
 ################################
 
-OBJS=fake_payloads.o imqp_functions.o super_functions.o
+CLASSES=Channel.o Connection.o Frame.o Queue.o 
+OBJS=${CLASSES} fake_payloads.o super_functions.o
 LIB=imqp_functions.a
 MAIN=ep1_main.c
 
@@ -16,13 +17,17 @@ MAIN=ep1_main.c
 
 all: ep1
 
-imqp_functions.o: imqp.h super_header.h
+Channel.o: Channel.h Frame.h super_header.h
+Connection.o: Connection.h Frame.h super_header.h
+Frame.o: Frame.h Connection.h Queue.h Channel.h super_header.h
+Queue.o: Queue.h Frame.h super_header.h
+super_functions.o: super_header.h
 
 ${LIB}: ${OBJS}
 	${AR} ${ARFLAGS} ${LIB} ${OBJS}
 
-ep1: ${OBJS} ${LIB} ${MAIN} imqp.h
+ep1: ${OBJS} ${LIB} ${MAIN} Connection.h
 	${CC} ${CFLAGS} -o ep1 ${MAIN} ${LIB}
 
 clean:
-	@rm -rf *.o *.a ep1
+	@rm -rf *.o *.a *.log ep1
