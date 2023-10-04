@@ -22,10 +22,10 @@ enum IMQP_Frame_t {
   METHOD_FRAME = 1,
   HEADER_FRAME,
   BODY_FRAME,
-  HEARTBEAT_FRAME
+  HEARTBEAT_FRAME = 8,
 };
 
-enum IMQP_Frame_Method_Class {
+enum IMQP_Frame_Class {
   CONNECTION_CLASS = 10,
   CHANNEL_CLASS = 20,
   QUEUE_CLASS = 50,
@@ -43,6 +43,7 @@ void process_frame(Connection *connection);
 void message_break_b(uint8_t *content, void **index);
 void message_break_s(uint16_t *content, void **index);
 void message_break_l(uint32_t *content, void **index);
+void message_break_ll(uint64_t *content, void **index);
 void message_break_n(void *content, void **index, uint16_t n);
 
 /* deserialization functions */
@@ -50,6 +51,9 @@ void message_break_n(void *content, void **index, uint16_t n);
 void message_build_b(void **index, uint8_t *content);
 void message_build_s(void **index, uint16_t *content);
 void message_build_l(void **index, uint32_t *content);
+void message_build_ll(void **index, uint64_t *content);
 void message_build_n(void **index, void *content, uint16_t n);
+
+int send_heartbeat(Connection* connection);
 
 #endif /* FRAME_H */

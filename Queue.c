@@ -3,6 +3,8 @@
 
 #include "Frame.h"
 #include "Queue.h"
+#include "Basic.h"
+#include "Connection.h"
 #include "super_header.h"
 
 /*====================================*/
@@ -53,23 +55,25 @@ static IMQP_Queue_List *queue_list;
 /*====================================*/
 
 static IMQP_Queue_List *new_IMQP_Queue_List();
-static IMQP_Queue *new_IMQP_Queue(IMQP_Argument *argument);
+static IMQP_Queue *new_IMQP_Queue(IMQP_Byte *argument);
 static void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
 
 static void add_to_queue_list(IMQP_Queue *queue);
 static void add_to_queue(IMQP_Queue *queue, Connection *connection);
 
+static Connection* get_connection_from_queue(const char *queue_name);
 static Connection *get_next_connection_from_queue(IMQP_Queue *queue);
 static void print_queue_list();
+static void remove_current_connection(IMQP_Queue* queue);
 
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
 
 void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
-  IMQP_Argument *arguments = frame->arguments;
+  IMQP_Byte *arguments = frame->payload.method_pl.arguments;
   IMQP_Queue *queue = NULL;
-  switch ((enum IMQP_Frame_Queue)frame->method) {
+  switch ((enum IMQP_Frame_Queue)frame->payload.method_pl.method) {
   case QUEUE_DECLARE:
     if (queue_list == NULL) {
       queue_list = new_IMQP_Queue_List();
@@ -87,14 +91,14 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
   }
 }
 
-Connection *get_connection_from_queue(const char *queue_name) {
-  for (int i = 0; i < queue_list->total_queues; i++) {
-    IMQP_Queue *queue = queue_list->list[i];
-    if (strcmp(queue->name, queue_name) == 0) {
-      return get_next_connection_from_queue(queue);
-    }
+void publish_to_queue(char* queue_name, char* body, int body_size){
+  printf("queue_name: %s\n", queue_name);
+  Connection* connection = get_connection_from_queue(queue_name);
+  if (connection == NULL) {
+    fprintf(stderr, "Queue %s not found or it is empty\n", queue_name);
+    return;
   }
-  return NULL;
+  send_basic_deliver(connection, queue_name, body, body_size);
 }
 
 void put_into_queue(Connection *connection, const char *queue_name) {
@@ -121,7 +125,7 @@ IMQP_Queue_List *new_IMQP_Queue_List() {
   return queue_list;
 }
 
-IMQP_Queue *new_IMQP_Queue(IMQP_Argument *arguments) {
+IMQP_Queue *new_IMQP_Queue(IMQP_Byte *arguments) {
   IMQP_Queue *queue = Malloc(sizeof(*queue));
 
   void *index = arguments;
@@ -204,13 +208,48 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
   Write(connection->socket, (const char *)message, index - (void *)message);
 }
 
+Connection *get_connection_from_queue(const char *queue_name) {
+  for (int i = 0; i < queue_list->total_queues; i++) {
+    IMQP_Queue *queue = queue_list->list[i];
+    if (strcmp(queue->name, queue_name) == 0) {
+      return get_next_connection_from_queue(queue);
+    }
+  }
+  return NULL;
+}
+
 Connection *get_next_connection_from_queue(IMQP_Queue *queue) {
   if (queue->round_robin < queue->total_connections) {
     Connection *connection = queue->connections[queue->round_robin];
+    if(connection->is_closed){
+      remove_current_connection(queue);
+      return get_next_connection_from_queue(queue);
+    }
     queue->round_robin = (queue->round_robin + 1) % queue->total_connections;
     return connection;
   }
   return NULL;
+}
+
+void remove_current_connection(IMQP_Queue* queue){
+  int to_remove_index = queue->round_robin;
+  Connection *to_remove_connection = queue->connections[to_remove_index];
+
+
+  /* if the connection is not on the top */
+  if(queue->round_robin < queue->total_connections - 1){
+    /* pull every connection* */
+    for(int i = to_remove_index + 1; i < queue->total_connections; i++){
+      queue->connections[i - 1] = queue->connections[i];
+    }
+  }
+  else if(queue->round_robin == queue->total_connections - 1){
+    /* reset round robin to prevent invalid memory access */
+    queue->round_robin = 0;
+  }
+
+  queue->total_connections--;
+  free_connection(to_remove_connection);
 }
 
 void print_queue_list() {

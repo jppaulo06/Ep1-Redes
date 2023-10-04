@@ -1,6 +1,6 @@
 # Makefile melhorado para o código da aula 19
 CC=gcc
-CFLAGS= -Wall
+CFLAGS= -Wall -g3 -O0
 AR=ar
 ARFLAGS= -rcv
 

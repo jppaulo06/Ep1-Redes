@@ -12,7 +12,7 @@
 /*====================================*/
 
 void process_frame_queue(Connection *connection, IMQP_Frame *frame);
-Connection* get_connection_from_queue(const char *queue_name);
+void publish_to_queue(char* queue_name, char* body, int body_size);
 void put_into_queue(Connection* connection, const char* queue_name);
 
 #endif /* QUEUE_H */

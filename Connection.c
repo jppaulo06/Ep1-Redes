@@ -5,6 +5,9 @@
 #include "Frame.h"
 #include "super_header.h"
 
+// remove
+#include <stdio.h>
+
 /*====================================*/
 /* PRIVATE ENUMS */
 /*====================================*/
@@ -40,10 +43,8 @@ extern const int FAKE_CONNECTION_OPEN_OK_SIZE;
 Connection *new_AMQP_Connection(int socket);
 
 static void init_connection(Connection *connection);
-static void close_connection(Connection *connection);
 static void make_connection_config(Connection *connection,
-                                   IMQP_Argument *arguments);
-
+                                   IMQP_Byte *arguments);
 static void receive_protocol_header(Connection *connection);
 
 static void send_connection_start(Connection *connection);
@@ -59,11 +60,14 @@ static void send_connection_close_ok(Connection *connection);
 void process_connection(int connfd) {
   Connection *connection = new_AMQP_Connection(connfd);
   process_frame(connection);
+  if(connection->is_closed){
+    free_connection(connection);
+  }
 }
 
 void process_frame_connection(Connection *connection, IMQP_Frame *frame) {
-  IMQP_Argument *arguments = frame->arguments;
-  switch ((enum IMQP_Frame_Connection)frame->method) {
+  IMQP_Byte *arguments = frame->payload.method_pl.arguments;
+  switch ((enum IMQP_Frame_Connection)frame->payload.method_pl.method) {
   case CONNECTION_START:
     THROW("Wtf is happening? Am I talking to a server?");
     break;
@@ -94,25 +98,24 @@ void process_frame_connection(Connection *connection, IMQP_Frame *frame) {
   }
 }
 
-int connection_is_off(Connection *connection) {
-  int error_code;
-  int error_code_size = sizeof(error_code);
-  if (getsockopt(connection->socket, SOL_SOCKET, SO_ERROR, &error_code,
-                 (socklen_t *)&error_code_size) < 0) {
-    return 1;
+void free_connection(Connection* connection){
+  if(connection->is_consumer) {
+    free(connection->consumer_tag);
   }
-  return 0;
+  free(connection);
 }
 
 /*====================================*/
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
 
-/* BASICS */
-
 Connection *new_AMQP_Connection(int socket) {
   Connection *connection = Malloc(sizeof(*connection));
   connection->socket = socket;
+  connection->consumer_tag_size = 0;
+  connection->consumer_tag = NULL;
+  connection->is_closed = 0;
+  connection->is_consumer = 0;
   init_connection(connection);
   return connection;
 }
@@ -122,9 +125,12 @@ void init_connection(Connection *connection) {
   send_connection_start(connection);
 }
 
-void close_connection(Connection *connection) { close(connection->socket); }
+void close_connection(Connection *connection) {
+  close(connection->socket); 
+  connection->is_closed = 1;
+}
 
-void make_connection_config(Connection *connection, IMQP_Argument *arguments) {
+void make_connection_config(Connection *connection, IMQP_Byte *arguments) {
   void *index = arguments;
 
   message_break_s(&connection->config.channel_max, &index);

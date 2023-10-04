@@ -58,8 +58,6 @@ int main (int argc, char **argv) {
         printf("[Uma conexão aberta] %d\n", connfd);
 
         process_connection(connfd);
-
-        close(connfd);
     }
     exit(0);
 }

@@ -32,8 +32,7 @@ static void send_channel_close_ok(Connection *connection);
 /*====================================*/
 
 void process_frame_channel(Connection *connection, IMQP_Frame *frame) {
-  // IMQP_Argument *arguments = frame->arguments;
-  switch ((enum IMQP_Frame_Channel)frame->method) {
+  switch ((enum IMQP_Frame_Channel)frame->payload.method_pl.method) {
   case CHANNEL_OPEN:
     send_channel_open_ok(connection);
     break;
