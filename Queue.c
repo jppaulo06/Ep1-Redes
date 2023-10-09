@@ -97,6 +97,7 @@ void publish_to_queue(char* queue_name, char* body, int body_size){
     fprintf(stderr, "Queue %s not found or it is empty\n", queue_name);
     return;
   }
+  // TODO: REMOVE THIS TO ANOTHER PLACE
   send_basic_deliver(connection, queue_name, body, body_size);
 }
 
@@ -189,7 +190,7 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
   uint32_t message_size =
       sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
 
-  uint8_t *message = Malloc(message_size);
+  uint8_t message[message_size];
 
   void *index = message;
 

@@ -152,7 +152,7 @@ int send_heartbeat(Connection *connection) {
   uint32_t message_size =
       sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
 
-  uint8_t *message = Malloc(message_size);
+  uint8_t message[message_size];
 
   void *index = message;
 
@@ -167,8 +167,6 @@ int send_heartbeat(Connection *connection) {
   if(ret <= 0) {
     printf("Morri! connection: %p, return: %d\n", connection->consumer_tag, ret);
   }
-
-  free(message);
 
   return ret <= 0;
 }

@@ -22,12 +22,18 @@ enum IMQP_Frame_Basic {
 };
 
 /*====================================*/
+/* PRIVATE MACROS */
+/*====================================*/
+
+#define CTAG_DEFAULT_RANDOM_SIZE 20
+
+/*====================================*/
 /* PRIVATE FUNCTIONS */
 /*====================================*/
 
 static void create_new_consumer(Connection *connection, IMQP_Byte *arguments);
 static void send_basic_consume_ok(Connection *connection);
-static char *create_consumer_tag(uint8_t *size);
+static void create_consumer_tag(uint8_t** consumer_tag, uint8_t* size);
 static void publish();
 static void define_pub_queue_name(IMQP_Byte *arguments);
 static void free_pub();
@@ -109,6 +115,7 @@ int get_pub_size() { return publication.size; }
 void send_basic_deliver(Connection *connection, char *queue_name,
                         IMQP_Byte *body, uint32_t body_size) {
 
+  // TODO: Change this line
   IMQP_Byte *message = Malloc(2000);
 
   int message_size = 0;
@@ -139,13 +146,12 @@ void create_new_consumer(Connection *connection, IMQP_Byte *arguments) {
   garbage = message_break_s(&index);
   name_size = message_break_b(&index);
 
-  char *queue_name = Malloc(name_size + 1);
+  char queue_name[name_size + 1];
 
   message_break_n(queue_name, &index, name_size);
   queue_name[name_size] = '\x00';
 
   put_into_queue(connection, queue_name);
-  free(queue_name);
 }
 
 void send_basic_consume_ok(Connection *connection) {
@@ -157,8 +163,10 @@ void send_basic_consume_ok(Connection *connection) {
   uint16_t class = BASIC_CLASS;
   uint16_t method = BASIC_CONSUME_OK;
 
-  uint8_t consumer_tag_size = 20;
-  const char *consumer_tag = create_consumer_tag(&consumer_tag_size);
+  uint8_t* consumer_tag;
+  uint8_t consumer_tag_size;
+
+  create_consumer_tag(&consumer_tag, &consumer_tag_size);
 
   connection->consumer_tag = (IMQP_Byte *)consumer_tag;
   connection->consumer_tag_size = consumer_tag_size;
@@ -171,7 +179,7 @@ void send_basic_consume_ok(Connection *connection) {
   uint32_t message_size =
       sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
 
-  uint8_t *message = Malloc(message_size);
+  uint8_t message[message_size];
 
   void *index = message;
 
@@ -215,18 +223,20 @@ void publish() {
   publish_to_queue(publication.queue_name, publication.body, publication.size);
 }
 
-char *create_consumer_tag(uint8_t *size) {
+void create_consumer_tag(uint8_t** consumer_tag, uint8_t* ctag_size) {
   const char *ctag_default = "amq.ctag-";
-  const int ctag_min_len = strlen(ctag_default);
-  assert(*size > ctag_min_len && "Input size MUST be greater tan ctag_min_len");
+  const uint8_t ctag_default_size = strlen(ctag_default);
 
-  *size = *size + ctag_min_len;
-  char *consumer_tag = Malloc(*size);
-  strcpy(consumer_tag, ctag_default);
-  for (int i = ctag_min_len; i < *size; i++) {
-    consumer_tag[i] = (rand() % ('Z' - 'A')) + 'A';
+  uint8_t random_size = CTAG_DEFAULT_RANDOM_SIZE;
+  *ctag_size = ctag_default_size + random_size;
+
+  *consumer_tag = Malloc(*ctag_size);
+
+  memcpy(*consumer_tag, ctag_default, ctag_default_size);
+
+  for (uint8_t i = ctag_default_size; i < *ctag_size; i++) {
+    (*consumer_tag)[i] = (uint8_t)((rand() % ('Z' - 'A')) + 'A');
   }
-  return consumer_tag;
 }
 
 int build_basic_deliver_method(Connection *connection, IMQP_Byte *message,

@@ -71,7 +71,7 @@ void send_channel_close_ok(Connection *connection) {
   uint32_t message_size =
       sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
 
-  uint8_t *message = Malloc(message_size);
+  uint8_t message[message_size];
 
   void *index = message;
 
