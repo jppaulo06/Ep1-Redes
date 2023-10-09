@@ -12,7 +12,7 @@
 /*====================================*/
 
 #define INITIAL_MAX_CONNECTIONS 1000
-#define INITIAL_MAX_CONNECTIONS_QUEUES 20
+#define INITIAL_MAX_CONNECTIONS_QUEUES 120
 
 /*====================================*/
 /* PRIVATE ENUMS */
@@ -92,7 +92,6 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
 }
 
 void publish_to_queue(char* queue_name, char* body, int body_size){
-  printf("queue_name: %s\n", queue_name);
   Connection* connection = get_connection_from_queue(queue_name);
   if (connection == NULL) {
     fprintf(stderr, "Queue %s not found or it is empty\n", queue_name);
@@ -130,8 +129,8 @@ IMQP_Queue *new_IMQP_Queue(IMQP_Byte *arguments) {
 
   void *index = arguments;
 
-  message_break_s(&queue->ticket, &index);
-  message_break_b(&queue->name_size, &index);
+  queue->ticket = message_break_s(&index);
+  queue->name_size = message_break_b(&index);
 
   queue->name = Malloc(queue->name_size + 1);
 

@@ -76,27 +76,35 @@ void process_frame(Connection *connection) {
 
 /* Deserialization functions */
 
-void message_break_b(uint8_t *content, void **index) {
-  memcpy(content, *index, sizeof(*content));
-  *index += sizeof(*content);
+uint8_t message_break_b(void **index) {
+  uint8_t content;
+  memcpy(&content, *index, sizeof(content));
+  *index += sizeof(content);
+  return content;
 }
 
-void message_break_s(uint16_t *content, void **index) {
-  memcpy(content, *index, sizeof(*content));
-  *content = ntohs(*content);
-  *index += sizeof(*content);
+uint16_t message_break_s(void **index) {
+  uint16_t content;
+  memcpy(&content, *index, sizeof(content));
+  content = ntohs(content);
+  *index += sizeof(content);
+  return content;
 }
 
-void message_break_l(uint32_t *content, void **index) {
-  memcpy(content, *index, sizeof(*content));
-  *content = ntohl(*content);
-  *index += sizeof(*content);
+uint32_t message_break_l(void **index) {
+  uint32_t content;
+  memcpy(&content, *index, sizeof(content));
+  content = ntohl(content);
+  *index += sizeof(content);
+  return content;
 }
 
-void message_break_ll(uint64_t *content, void **index) {
-  memcpy(content, *index, sizeof(*content));
-  *content = ntohll(*content);
-  *index += sizeof(*content);
+uint64_t message_break_ll(void **index) {
+  uint64_t content;
+  memcpy(&content, *index, sizeof(content));
+  content = ntohll(content);
+  *index += sizeof(content);
+  return content;
 }
 
 void message_break_n(void *content, void **index, uint16_t n) {
@@ -195,9 +203,9 @@ void receive_frame_header(Connection *connection, IMQP_Frame *frame) {
 
   void *offset = buffer;
 
-  message_break_b(&frame->type, &offset);
-  message_break_s(&frame->channel, &offset);
-  message_break_l(&frame->payload_size, &offset);
+  frame->type = message_break_b(&offset);
+  frame->channel = message_break_s(&offset);
+  frame->payload_size = message_break_l(&offset);
 }
 
 void receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
@@ -207,8 +215,8 @@ void receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
   void *offset = buffer;
   switch (frame->type) {
   case METHOD_FRAME:
-    message_break_s(&frame->payload.method_pl.class_method, &offset);
-    message_break_s(&frame->payload.method_pl.method, &offset);
+    frame->payload.method_pl.class_method = message_break_s(&offset);
+    frame->payload.method_pl.method = message_break_s(&offset);
 
     frame->payload.method_pl.arguments_size =
         frame->payload_size - (offset - (void *)buffer);
@@ -223,7 +231,7 @@ void receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
     }
     break;
   case HEADER_FRAME:
-    message_break_s(&frame->payload.header_pl.class_header, &offset);
+    frame->payload.header_pl.class_header = message_break_s(&offset);
 
     frame->payload.header_pl.remaining_payload_size =
         frame->payload_size - (offset - (void *)buffer);
@@ -302,7 +310,6 @@ void process_header_frame(Connection *connection, IMQP_Frame *frame) {
 }
 
 void process_body_frame(Connection *connection, IMQP_Frame *frame) {
-  printf("Estou aqui tentando fazer um publish, mas algo da errado :/\n");
   define_pub_body(frame->payload.body_pl.body);
   finish_pub();
 }

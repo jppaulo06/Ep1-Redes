@@ -40,10 +40,10 @@ void process_frame(Connection *connection);
 
 /* serialization functions */
 
-void message_break_b(uint8_t *content, void **index);
-void message_break_s(uint16_t *content, void **index);
-void message_break_l(uint32_t *content, void **index);
-void message_break_ll(uint64_t *content, void **index);
+uint8_t message_break_b(void **index);
+uint16_t message_break_s(void **index);
+uint32_t message_break_l(void **index);
+uint64_t message_break_ll(void **index);
 void message_break_n(void *content, void **index, uint16_t n);
 
 /* deserialization functions */

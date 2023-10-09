@@ -5,8 +5,8 @@
 #include "super_header.h"
 #include <assert.h>
 #include <pthread.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <stdio.h>
 
@@ -82,11 +82,10 @@ void define_pub_body_size(IMQP_Byte *remaining_payload) {
   uint16_t garbage;
   uint64_t size;
 
-  message_break_s(&garbage, &index);
-  message_break_ll(&size, &index);
+  garbage = message_break_s(&index);
+  size = message_break_ll(&index);
 
   publication.size = size;
-  printf("Size: %ju", publication.size);
 }
 
 void define_pub_body(IMQP_Byte *payload) {
@@ -137,8 +136,8 @@ void create_new_consumer(Connection *connection, IMQP_Byte *arguments) {
   uint16_t garbage;
   uint8_t name_size;
 
-  message_break_s(&garbage, &index);
-  message_break_b(&name_size, &index);
+  garbage = message_break_s(&index);
+  name_size = message_break_b(&index);
 
   char *queue_name = Malloc(name_size + 1);
 
@@ -195,16 +194,14 @@ void define_pub_queue_name(IMQP_Byte *arguments) {
   uint8_t garbage2;
   uint8_t name_size;
 
-  message_break_s(&garbage, &index);
-  message_break_b(&garbage2, &index);
-  message_break_b(&name_size, &index);
+  garbage = message_break_s(&index);
+  garbage2 = message_break_b(&index);
+  name_size = message_break_b(&index);
 
   char *queue_name = Malloc(name_size + 1);
 
   message_break_n(queue_name, &index, name_size);
   queue_name[name_size] = '\x00';
-
-  printf("BLA queue_name: %s\n", queue_name);
 
   publication.queue_name = queue_name;
 }
@@ -313,16 +310,11 @@ int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
 
   int size = body_size;
 
-  printf("body_size: %d\n", body_size);
-  printf("body: %s\n", body);
-
   message_build_b(&index, &type);
   message_build_s(&index, &channel);
   message_build_l(&index, &body_size);
   message_build_n(&index, body, size);
   message_build_b(&index, FRAME_END);
-
-  printf("index: %p\n", index);
 
   return index - (void *)message;
 }
@@ -332,7 +324,7 @@ void *waitForFIN(void *con) {
   int socketfd = connection->socket;
   char buffer[2000];
   int ret = read(socketfd, buffer, 1000);
-  if(ret > 0) {
+  if (ret > 0) {
     return waitForFIN(connection);
   }
   close_connection(connection);
