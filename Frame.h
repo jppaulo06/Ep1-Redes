@@ -12,7 +12,7 @@
 /* PRIVATE MACROS */
 /*====================================*/
 
-#define FRAME_END ((uint8_t *)"\xCE")
+#define FRAME_END ((uint8_t)'\xCE')
 
 /*====================================*/
 /* PUBLIC ENUMS */
@@ -48,10 +48,10 @@ void message_break_n(void *content, void **index, uint16_t n);
 
 /* deserialization functions */
 
-void message_build_b(void **index, uint8_t *content);
-void message_build_s(void **index, uint16_t *content);
-void message_build_l(void **index, uint32_t *content);
-void message_build_ll(void **index, uint64_t *content);
+void message_build_b(void **index, uint8_t content);
+void message_build_s(void **index, uint16_t content);
+void message_build_l(void **index, uint32_t content);
+void message_build_ll(void **index, uint64_t content);
 void message_build_n(void **index, void *content, uint16_t n);
 
 int send_heartbeat(Connection* connection);

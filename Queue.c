@@ -193,15 +193,15 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
 
   void *index = message;
 
-  message_build_b(&index, &type);
-  message_build_s(&index, &channel);
-  message_build_l(&index, &payload_size);
-  message_build_s(&index, &class);
-  message_build_s(&index, &method);
-  message_build_b(&index, &queue->name_size);
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, payload_size);
+  message_build_s(&index, class);
+  message_build_s(&index, method);
+  message_build_b(&index, queue->name_size);
   message_build_n(&index, queue->name, queue->name_size);
-  message_build_l(&index, &message_count);
-  message_build_l(&index, &consumer_count);
+  message_build_l(&index, message_count);
+  message_build_l(&index, consumer_count);
   message_build_b(&index, FRAME_END);
 
   Write(connection->socket, (const char *)message, index - (void *)message);

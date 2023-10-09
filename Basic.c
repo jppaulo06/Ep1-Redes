@@ -175,12 +175,12 @@ void send_basic_consume_ok(Connection *connection) {
 
   void *index = message;
 
-  message_build_b(&index, &type);
-  message_build_s(&index, &channel);
-  message_build_l(&index, &payload_size);
-  message_build_s(&index, &class);
-  message_build_s(&index, &method);
-  message_build_b(&index, &consumer_tag_size);
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, payload_size);
+  message_build_s(&index, class);
+  message_build_s(&index, method);
+  message_build_b(&index, consumer_tag_size);
   message_build_n(&index, (void *)consumer_tag, consumer_tag_size);
   message_build_b(&index, FRAME_END);
 
@@ -252,17 +252,17 @@ int build_basic_deliver_method(Connection *connection, IMQP_Byte *message,
 
   void *index = message;
 
-  message_build_b(&index, &type);
-  message_build_s(&index, &channel);
-  message_build_l(&index, &payload_size);
-  message_build_s(&index, &class);
-  message_build_s(&index, &method);
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, payload_size);
+  message_build_s(&index, class);
+  message_build_s(&index, method);
 
-  message_build_b(&index, &connection->consumer_tag_size);
+  message_build_b(&index, connection->consumer_tag_size);
   message_build_n(&index, (void *)connection->consumer_tag,
                   connection->consumer_tag_size);
   message_build_n(&index, (void *)mocks, mocks_size);
-  message_build_b(&index, &queue_name_size);
+  message_build_b(&index, queue_name_size);
   message_build_n(&index, (void *)queue_name, queue_name_size);
   message_build_b(&index, FRAME_END);
 
@@ -287,12 +287,12 @@ int build_basic_deliver_header(IMQP_Byte *message, uint64_t body_size) {
 
   void *index = message;
 
-  message_build_b(&index, &type);
-  message_build_s(&index, &channel);
-  message_build_l(&index, &payload_size);
-  message_build_s(&index, &class);
-  message_build_s(&index, &weight);
-  message_build_ll(&index, &body_size);
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, payload_size);
+  message_build_s(&index, class);
+  message_build_s(&index, weight);
+  message_build_ll(&index, body_size);
   message_build_n(&index, (void *)mocks, mocks_size);
   message_build_b(&index, FRAME_END);
 
@@ -310,9 +310,9 @@ int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
 
   int size = body_size;
 
-  message_build_b(&index, &type);
-  message_build_s(&index, &channel);
-  message_build_l(&index, &body_size);
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, body_size);
   message_build_n(&index, body, size);
   message_build_b(&index, FRAME_END);
 

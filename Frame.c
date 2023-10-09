@@ -114,27 +114,27 @@ void message_break_n(void *content, void **index, uint16_t n) {
 
 /* Serialization functions */
 
-void message_build_b(void **index, uint8_t *content) {
-  memcpy(*index, content, sizeof(*content));
-  *index += sizeof(*content);
+void message_build_b(void **index, uint8_t content) {
+  memcpy(*index, &content, sizeof(content));
+  *index += sizeof(content);
 }
 
-void message_build_s(void **index, uint16_t *content) {
-  *content = htons(*content);
-  memcpy(*index, content, sizeof(*content));
-  *index += sizeof(*content);
+void message_build_s(void **index, uint16_t content) {
+  content = htons(content);
+  memcpy(*index, &content, sizeof(content));
+  *index += sizeof(content);
 }
 
-void message_build_l(void **index, uint32_t *content) {
-  *content = htonl(*content);
-  memcpy(*index, content, sizeof(*content));
-  *index += sizeof(*content);
+void message_build_l(void **index, uint32_t content) {
+  content = htonl(content);
+  memcpy(*index, &content, sizeof(content));
+  *index += sizeof(content);
 }
 
-void message_build_ll(void **index, uint64_t *content) {
-  *content = htonll(*content);
-  memcpy(*index, content, sizeof(*content));
-  *index += sizeof(*content);
+void message_build_ll(void **index, uint64_t content) {
+  content = htonll(content);
+  memcpy(*index, &content, sizeof(content));
+  *index += sizeof(content);
 }
 
 void message_build_n(void **index, void *content, uint16_t n) {
@@ -156,9 +156,9 @@ int send_heartbeat(Connection *connection) {
 
   void *index = message;
 
-  message_build_b(&index, &type);
-  message_build_s(&index, &channel);
-  message_build_l(&index, &payload_size);
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, payload_size);
   message_build_b(&index, FRAME_END);
 
   int ret =
