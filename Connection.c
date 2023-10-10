@@ -135,7 +135,6 @@ void make_connection_config(Connection *connection, IMQP_Byte *arguments) {
 
   connection->config.channel_max = message_break_s(&index);
   connection->config.frame_max = message_break_l(&index);
-  connection->config.heartbeat = message_break_s(&index);
 }
 
 /* SEND / RECEIVE */

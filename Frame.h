@@ -54,6 +54,4 @@ void message_build_l(void **index, uint32_t content);
 void message_build_ll(void **index, uint64_t content);
 void message_build_n(void **index, void *content, uint16_t n);
 
-int send_heartbeat(Connection* connection);
-
 #endif /* FRAME_H */

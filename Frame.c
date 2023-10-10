@@ -33,7 +33,6 @@
 /*====================================*/
 
 static IMQP_Frame *new_IMQP_Frame();
-static void throw_frame_away(Connection *connection);
 static void receive_frame(Connection *connection, IMQP_Frame *frame);
 
 static void receive_frame_header(Connection *connection, IMQP_Frame *frame);
@@ -67,7 +66,7 @@ void process_frame(Connection *connection) {
     process_body_frame(connection, frame);
     break;
   case HEARTBEAT_FRAME:
-    THROW("Not implemented frame");
+    fprintf(stderr, "[WARNING] Heartbeat (not supported) received.\n");
     break;
   }
   release_frame(&frame);
@@ -142,35 +141,6 @@ void message_build_n(void **index, void *content, uint16_t n) {
   *index += n;
 }
 
-int send_heartbeat(Connection *connection) {
-  uint8_t type = HEARTBEAT_FRAME;
-  uint16_t channel = BASE_COMMUNICATION_CHANNEL;
-
-  uint32_t payload_size = 0;
-
-  /* + 1 because of frame-end %xCE */
-  uint32_t message_size =
-      sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
-
-  uint8_t message[message_size];
-
-  void *index = message;
-
-  message_build_b(&index, type);
-  message_build_s(&index, channel);
-  message_build_l(&index, payload_size);
-  message_build_b(&index, FRAME_END);
-
-  int ret =
-      write(connection->socket, (const char *)message, index - (void *)message);
-
-  if(ret <= 0) {
-    printf("Morri! connection: %p, return: %d\n", connection->consumer_tag, ret);
-  }
-
-  return ret <= 0;
-}
-
 /*====================================*/
 /* PRIVATE FUNCTIONS DECLARATIONS */
 /*====================================*/
@@ -179,12 +149,6 @@ IMQP_Frame *new_IMQP_Frame() {
   IMQP_Frame *frame = Malloc(sizeof(*frame));
   bzero(frame, sizeof(*frame));
   return frame;
-}
-
-void throw_frame_away(Connection *connection) {
-  IMQP_Frame *frame = new_IMQP_Frame();
-  receive_frame(connection, frame);
-  release_frame(&frame);
 }
 
 void receive_frame(Connection *connection, IMQP_Frame *frame) {
@@ -208,7 +172,6 @@ void receive_frame_header(Connection *connection, IMQP_Frame *frame) {
 
 void receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
   IMQP_Byte buffer[frame->payload_size];
-  uint16_t garbage;
   Read(connection->socket, buffer, frame->payload_size);
   void *offset = buffer;
   switch (frame->type) {

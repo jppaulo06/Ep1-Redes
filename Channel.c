@@ -27,6 +27,8 @@ extern const int FAKE_CHANNEL_OPEN_OK_SIZE;
 static void send_channel_open_ok(Connection *connection);
 static void send_channel_close_ok(Connection *connection);
 
+static int build_channel_close_ok(IMQP_Byte* message);
+
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
@@ -54,11 +56,22 @@ void process_frame_channel(Connection *connection, IMQP_Frame *frame) {
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
 
+// TODO: REMOVE THIS MOCK!!
 void send_channel_open_ok(Connection *connection) {
   Write(connection->socket, FAKE_CHANNEL_OPEN_OK, FAKE_CHANNEL_OPEN_OK_SIZE);
 }
 
 void send_channel_close_ok(Connection *connection) {
+  IMQP_Byte message[MAX_FRAME_SIZE];
+
+  int message_size = 0;
+
+  message_size += build_channel_close_ok(message);
+
+  Write(connection->socket, (const char *)message, message_size);
+}
+
+int build_channel_close_ok(IMQP_Byte* message){
   uint8_t type = METHOD_FRAME;
   uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
 
@@ -67,20 +80,14 @@ void send_channel_close_ok(Connection *connection) {
 
   uint32_t payload_size = sizeof(class) + sizeof(method);
 
-  /* + 1 because of frame-end %xCE */
-  uint32_t message_size =
-      sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
+  void *offset = message;
 
-  uint8_t message[message_size];
+  message_build_b(&offset, type);
+  message_build_s(&offset, channel);
+  message_build_l(&offset, payload_size);
+  message_build_s(&offset, class);
+  message_build_s(&offset, method);
+  message_build_b(&offset, FRAME_END);
 
-  void *index = message;
-
-  message_build_b(&index, type);
-  message_build_s(&index, channel);
-  message_build_l(&index, payload_size);
-  message_build_s(&index, class);
-  message_build_s(&index, method);
-  message_build_b(&index, FRAME_END);
-
-  Write(connection->socket, (const char *)message, index - (void *)message);
+  return offset - (void *)message;
 }

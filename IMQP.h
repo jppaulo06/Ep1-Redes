@@ -62,7 +62,6 @@ typedef struct {
 typedef struct {
   uint16_t channel_max;
   uint32_t frame_max;
-  uint16_t heartbeat;
 } Config;
 
 typedef struct {

@@ -66,6 +66,8 @@ static Connection *get_next_connection_from_queue(IMQP_Queue *queue);
 static void print_queue_list();
 static void remove_current_connection(IMQP_Queue* queue);
 
+static int build_queue_declare_ok(IMQP_Byte* message, IMQP_Queue* queue);
+
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
@@ -94,10 +96,9 @@ void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
 void publish_to_queue(char* queue_name, char* body, int body_size){
   Connection* connection = get_connection_from_queue(queue_name);
   if (connection == NULL) {
-    fprintf(stderr, "Queue %s not found or it is empty\n", queue_name);
+    fprintf(stderr, "[WARNING] Queue %s not found or it is empty\n", queue_name);
     return;
   }
-  // TODO: REMOVE THIS TO ANOTHER PLACE
   send_basic_deliver(connection, queue_name, body, body_size);
 }
 
@@ -171,43 +172,6 @@ void add_to_queue(IMQP_Queue *queue, Connection *connection) {
   queue->total_connections += 1;
 }
 
-void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
-
-  uint8_t type = METHOD_FRAME;
-  uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
-
-  uint16_t class = QUEUE_CLASS;
-  uint16_t method = QUEUE_DECLARE_OK;
-  uint32_t message_count = 0;
-  uint32_t consumer_count = 0;
-
-  /* + 1 because of name size */
-  uint32_t payload_size = sizeof(class) + sizeof(method) +
-                          (1 + queue->name_size) + sizeof(message_count) +
-                          sizeof(consumer_count);
-
-  /* + 1 because of frame-end %xCE */
-  uint32_t message_size =
-      sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
-
-  uint8_t message[message_size];
-
-  void *index = message;
-
-  message_build_b(&index, type);
-  message_build_s(&index, channel);
-  message_build_l(&index, payload_size);
-  message_build_s(&index, class);
-  message_build_s(&index, method);
-  message_build_b(&index, queue->name_size);
-  message_build_n(&index, queue->name, queue->name_size);
-  message_build_l(&index, message_count);
-  message_build_l(&index, consumer_count);
-  message_build_b(&index, FRAME_END);
-
-  Write(connection->socket, (const char *)message, index - (void *)message);
-}
-
 Connection *get_connection_from_queue(const char *queue_name) {
   for (int i = 0; i < queue_list->total_queues; i++) {
     IMQP_Queue *queue = queue_list->list[i];
@@ -261,3 +225,48 @@ void print_queue_list() {
     }
   }
 }
+
+/* SEND AND BUILD FRAMES */
+
+void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
+
+  IMQP_Byte message[MAX_FRAME_SIZE];
+
+  int message_size = 0;
+
+  message_size += build_queue_declare_ok(message, queue);
+
+  Write(connection->socket, (const char *)message, message_size);
+}
+
+int build_queue_declare_ok(IMQP_Byte* message, IMQP_Queue* queue){
+
+  uint8_t type = METHOD_FRAME;
+  uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
+
+  uint16_t class = QUEUE_CLASS;
+  uint16_t method = QUEUE_DECLARE_OK;
+  uint32_t message_count = 0;
+  uint32_t consumer_count = 0;
+
+  /* + 1 because of name size */
+  uint32_t payload_size = sizeof(class) + sizeof(method) +
+                          (1 + queue->name_size) + sizeof(message_count) +
+                          sizeof(consumer_count);
+
+  void *offset = message;
+
+  message_build_b(&offset, type);
+  message_build_s(&offset, channel);
+  message_build_l(&offset, payload_size);
+  message_build_s(&offset, class);
+  message_build_s(&offset, method);
+  message_build_b(&offset, queue->name_size);
+  message_build_n(&offset, queue->name, queue->name_size);
+  message_build_l(&offset, message_count);
+  message_build_l(&offset, consumer_count);
+  message_build_b(&offset, FRAME_END);
+
+  return offset - (void *)message;
+}
+

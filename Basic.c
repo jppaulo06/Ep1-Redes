@@ -33,10 +33,14 @@ enum IMQP_Frame_Basic {
 
 static void create_new_consumer(Connection *connection, IMQP_Byte *arguments);
 static void send_basic_consume_ok(Connection *connection);
-static void create_consumer_tag(uint8_t** consumer_tag, uint8_t* size);
+static void create_consumer_tag(uint8_t **consumer_tag, uint8_t *size);
 static void publish();
 static void define_pub_queue_name(IMQP_Byte *arguments);
 static void free_pub();
+
+static int build_basic_consume_ok(Connection *connection, IMQP_Byte *message,
+                           uint8_t *consumer_tag, uint8_t consumer_tag_size);
+
 static int build_basic_deliver_method(Connection *connection,
                                       IMQP_Byte *message, char *queue_name);
 static int build_basic_deliver_header(IMQP_Byte *message, uint64_t body_size);
@@ -44,6 +48,7 @@ static int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
                                     uint32_t body_size);
 
 static void *waitForFIN(void *con);
+
 /*====================================*/
 /* PRIVATE VARIABLES */
 /*====================================*/
@@ -85,10 +90,9 @@ void process_frame_basic(Connection *connection, IMQP_Frame *frame) {
 void define_pub_body_size(IMQP_Byte *remaining_payload) {
   void *index = remaining_payload;
 
-  uint16_t garbage;
   uint64_t size;
 
-  garbage = message_break_s(&index);
+  message_break_s(&index);
   size = message_break_ll(&index);
 
   publication.size = size;
@@ -115,8 +119,7 @@ int get_pub_size() { return publication.size; }
 void send_basic_deliver(Connection *connection, char *queue_name,
                         IMQP_Byte *body, uint32_t body_size) {
 
-  // TODO: Change this line
-  IMQP_Byte *message = Malloc(2000);
+  IMQP_Byte message[3 * MAX_FRAME_SIZE];
 
   int message_size = 0;
   void *index = message;
@@ -130,7 +133,6 @@ void send_basic_deliver(Connection *connection, char *queue_name,
   message_size += build_basic_deliver_body(index, body, body_size);
 
   Write(connection->socket, message, message_size);
-  free(message);
 }
 
 /*====================================*/
@@ -140,10 +142,9 @@ void send_basic_deliver(Connection *connection, char *queue_name,
 void create_new_consumer(Connection *connection, IMQP_Byte *arguments) {
   void *index = arguments;
 
-  uint16_t garbage;
   uint8_t name_size;
 
-  garbage = message_break_s(&index);
+  message_break_s(&index);
   name_size = message_break_b(&index);
 
   char queue_name[name_size + 1];
@@ -154,7 +155,29 @@ void create_new_consumer(Connection *connection, IMQP_Byte *arguments) {
   put_into_queue(connection, queue_name);
 }
 
+// TODO: MAKE ALL SEND FUNCTIONS BE LIKE THIS!!
 void send_basic_consume_ok(Connection *connection) {
+
+  IMQP_Byte message[MAX_FRAME_SIZE];
+
+  int message_size = 0;
+
+  uint8_t *consumer_tag;
+  uint8_t consumer_tag_size;
+
+  create_consumer_tag(&consumer_tag, &consumer_tag_size);
+
+  connection->consumer_tag = (IMQP_Byte *)consumer_tag;
+  connection->consumer_tag_size = consumer_tag_size;
+
+  message_size += build_basic_consume_ok(connection, message, consumer_tag,
+                                         consumer_tag_size);
+
+  Write(connection->socket, (const char *)message, message_size);
+}
+
+int build_basic_consume_ok(Connection *connection, IMQP_Byte *message,
+                           uint8_t *consumer_tag, uint8_t consumer_tag_size) {
 
   uint8_t type = METHOD_FRAME;
 
@@ -163,47 +186,31 @@ void send_basic_consume_ok(Connection *connection) {
   uint16_t class = BASIC_CLASS;
   uint16_t method = BASIC_CONSUME_OK;
 
-  uint8_t* consumer_tag;
-  uint8_t consumer_tag_size;
-
-  create_consumer_tag(&consumer_tag, &consumer_tag_size);
-
-  connection->consumer_tag = (IMQP_Byte *)consumer_tag;
-  connection->consumer_tag_size = consumer_tag_size;
-
   /* + 1 because of size of consumer tag */
   uint32_t payload_size =
       sizeof(class) + sizeof(method) + consumer_tag_size + 1;
 
-  /* + 1 because of frame-end %xCE */
-  uint32_t message_size =
-      sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
+  void *offset = message;
 
-  uint8_t message[message_size];
+  message_build_b(&offset, type);
+  message_build_s(&offset, channel);
+  message_build_l(&offset, payload_size);
+  message_build_s(&offset, class);
+  message_build_s(&offset, method);
+  message_build_b(&offset, consumer_tag_size);
+  message_build_n(&offset, (void *)consumer_tag, consumer_tag_size);
+  message_build_b(&offset, FRAME_END);
 
-  void *index = message;
-
-  message_build_b(&index, type);
-  message_build_s(&index, channel);
-  message_build_l(&index, payload_size);
-  message_build_s(&index, class);
-  message_build_s(&index, method);
-  message_build_b(&index, consumer_tag_size);
-  message_build_n(&index, (void *)consumer_tag, consumer_tag_size);
-  message_build_b(&index, FRAME_END);
-
-  Write(connection->socket, (const char *)message, index - (void *)message);
+  return offset - (void *)message;
 }
 
 void define_pub_queue_name(IMQP_Byte *arguments) {
   void *index = arguments;
 
-  uint16_t garbage;
-  uint8_t garbage2;
   uint8_t name_size;
 
-  garbage = message_break_s(&index);
-  garbage2 = message_break_b(&index);
+  message_break_s(&index);
+  message_break_b(&index);
   name_size = message_break_b(&index);
 
   char *queue_name = Malloc(name_size + 1);
@@ -223,7 +230,7 @@ void publish() {
   publish_to_queue(publication.queue_name, publication.body, publication.size);
 }
 
-void create_consumer_tag(uint8_t** consumer_tag, uint8_t* ctag_size) {
+void create_consumer_tag(uint8_t **consumer_tag, uint8_t *ctag_size) {
   const char *ctag_default = "amq.ctag-";
   const uint8_t ctag_default_size = strlen(ctag_default);
 
