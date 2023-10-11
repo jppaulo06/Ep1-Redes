@@ -8,9 +8,20 @@
 #include "IMQP.h"
 
 /*====================================*/
+/* PUBLIC ENUM */
+/*====================================*/
+
+enum IMQP_Frame_Channel {
+  CHANNEL_OPEN = 10,
+  CHANNEL_OPEN_OK,
+  CHANNEL_CLOSE = 40,
+  CHANNEL_CLOSE_OK,
+};
+
+/*====================================*/
 /* PUBLIC FUNCTIONS DECLARATIONS */
 /*====================================*/
 
-void process_frame_channel(Connection *connection, IMQP_Frame *frame);
+void process_frame_channel(Connection *connection, Method_Payload payload);
 
 #endif /* CHANNEL_H */

@@ -36,22 +36,19 @@ enum IMQP_Frame_Class {
 /* PUBLIC FUNCTIONS */
 /*====================================*/
 
-void process_frame(Connection *connection);
+void receive_and_process_frame(Connection *connection);
 
-/* serialization functions */
+void send_channel_open_ok(Connection *connection);
+void send_channel_close_ok(Connection *connection);
+void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
+void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
+void send_basic_consume_ok(Connection *connection);
 
-uint8_t message_break_b(void **index);
-uint16_t message_break_s(void **index);
-uint32_t message_break_l(void **index);
-uint64_t message_break_ll(void **index);
-void message_break_n(void *content, void **index, uint16_t n);
-
-/* deserialization functions */
-
-void message_build_b(void **index, uint8_t content);
-void message_build_s(void **index, uint16_t content);
-void message_build_l(void **index, uint32_t content);
-void message_build_ll(void **index, uint64_t content);
-void message_build_n(void **index, void *content, uint16_t n);
+void receive_protocol_header(Connection *connection);
+void send_connection_start(Connection *connection);
+void send_connection_tune(Connection *connection);
+void send_connection_open_ok(Connection *connection);
+void send_connection_start(Connection *connection);
+void send_connection_close_ok(Connection *connection);
 
 #endif /* FRAME_H */

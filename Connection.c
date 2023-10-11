@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include "Connection.h"
@@ -9,177 +10,83 @@
 #include <stdio.h>
 
 /*====================================*/
-/* PRIVATE ENUMS */
-/*====================================*/
-
-enum IMQP_Frame_Connection {
-  CONNECTION_START = 10,
-  CONNECTION_START_OK,
-  CONNECTION_TUNE = 30,
-  CONNECTION_TUNE_OK,
-  CONNECTION_OPEN = 40,
-  CONNECTION_OPEN_OK,
-  CONNECTION_CLOSE = 50,
-  CONNECTION_CLOSE_OK,
-};
-
-/*====================================*/
-/* EXTERNAL VARIABLES */
-/*====================================*/
-
-extern const char *FAKE_CONNECTION_START;
-extern const int FAKE_CONNECTION_START_SIZE;
-
-extern const char *FAKE_CONNECTION_TUNE;
-extern const int FAKE_CONNECTION_TUNE_SIZE;
-
-extern const char *FAKE_CONNECTION_OPEN_OK;
-extern const int FAKE_CONNECTION_OPEN_OK_SIZE;
-
-/*====================================*/
 /* PRIVATE FUNCTIONS DECLARATIONS */
 /*====================================*/
 
-Connection *new_AMQP_Connection(int socket);
+static Connection* new_AMQP_Connection(int socket);
 
 static void init_connection(Connection *connection);
-static void make_connection_config(Connection *connection,
-                                   IMQP_Byte *arguments);
-static void receive_protocol_header(Connection *connection);
-
-static void send_connection_start(Connection *connection);
-static void send_connection_tune(Connection *connection);
-static void send_connection_open_ok(Connection *connection);
-static void send_connection_start(Connection *connection);
-static void send_connection_close_ok(Connection *connection);
-
+static void process_connection_tune_ok(Connection *connection,
+                                       Connection_Tune_Ok arguments);
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
 
 void process_connection(int connfd) {
-  Connection *connection = new_AMQP_Connection(connfd);
-  process_frame(connection);
-  if(connection->is_closed){
-    free_connection(connection);
+  Connection* connection = new_AMQP_Connection(connfd);
+  init_connection(connection);
+  receive_and_process_frame(connection);
+  if (connection->is_closed) {
+    free(connection);
   }
 }
 
-void process_frame_connection(Connection *connection, IMQP_Frame *frame) {
-  IMQP_Byte *arguments = frame->payload.method_pl.arguments;
-  switch ((enum IMQP_Frame_Connection)frame->payload.method_pl.method) {
+void process_frame_connection(Connection *connection, Method_Payload payload) {
+  switch ((enum IMQP_Frame_Connection)payload.method) {
   case CONNECTION_START:
-    THROW("Wtf is happening? Am I talking to a server?");
+    fprintf(stderr, "[WARNING] Received a not expected connection start\n");
     break;
   case CONNECTION_START_OK:
     send_connection_tune(connection);
     break;
   case CONNECTION_TUNE:
-    THROW("Wtf is happening? Am I talking to a server?");
+    fprintf(stderr, "[WARNING] Received a not expected connection tune ok\n");
     break;
   case CONNECTION_TUNE_OK:
-    make_connection_config(connection, arguments);
+    process_connection_tune_ok(connection,
+                               payload.arguments.connection_tune_ok);
     break;
   case CONNECTION_OPEN:
     send_connection_open_ok(connection);
     break;
   case CONNECTION_OPEN_OK:
-    THROW("Wtf is happening? Am I talking to a server?");
+    fprintf(stderr, "[WARNING] Received a not expected connection open ok\n");
     break;
   case CONNECTION_CLOSE:
     send_connection_close_ok(connection);
     close_connection(connection);
     break;
   case CONNECTION_CLOSE_OK:
-    THROW("Not implemented");
+    fprintf(stderr, "[WARNING] Received a not expected connection close ok\n");
     break;
   default:
-    THROW("Not suported");
+    fprintf(stderr, "[WARNING] Received a not expected connection method\n");
   }
 }
 
-void free_connection(Connection* connection){
-  if(connection->is_consumer) {
-    free(connection->consumer_tag);
-  }
-  free(connection);
+void close_connection(Connection *connection) {
+  close(connection->socket);
+  connection->is_closed = 1;
 }
 
 /*====================================*/
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
 
-Connection *new_AMQP_Connection(int socket) {
-  Connection *connection = Malloc(sizeof(*connection));
+void process_connection_tune_ok(Connection *connection,
+                                Connection_Tune_Ok arguments) {
+  connection->config.channel_max = arguments.channel_max;
+  connection->config.frame_max = arguments.frame_max;
+}
+
+Connection* new_AMQP_Connection(int socket) {
+  Connection* connection = malloc(sizeof(*connection));
+  bzero(connection, sizeof(*connection));
   connection->socket = socket;
-  connection->consumer_tag_size = 0;
-  connection->consumer_tag = NULL;
-  connection->is_closed = 0;
-  connection->is_consumer = 0;
-  init_connection(connection);
   return connection;
 }
 
 void init_connection(Connection *connection) {
   receive_protocol_header(connection);
   send_connection_start(connection);
-}
-
-void close_connection(Connection *connection) {
-  close(connection->socket); 
-  connection->is_closed = 1;
-}
-
-void make_connection_config(Connection *connection, IMQP_Byte *arguments) {
-  void *index = arguments;
-
-  connection->config.channel_max = message_break_s(&index);
-  connection->config.frame_max = message_break_l(&index);
-}
-
-/* SEND / RECEIVE */
-
-void receive_protocol_header(Connection *connection) {
-  char garbage[10] = {0};
-  Read(connection->socket, garbage, MAX_FRAME_SIZE);
-}
-
-void send_connection_start(Connection *connection) {
-  Write(connection->socket, FAKE_CONNECTION_START, FAKE_CONNECTION_START_SIZE);
-}
-
-void send_connection_tune(Connection *connection) {
-  Write(connection->socket, FAKE_CONNECTION_TUNE, FAKE_CONNECTION_TUNE_SIZE);
-}
-
-void send_connection_open_ok(Connection *connection) {
-  Write(connection->socket, FAKE_CONNECTION_OPEN_OK,
-        FAKE_CONNECTION_OPEN_OK_SIZE);
-}
-
-void send_connection_close_ok(Connection *connection) {
-  uint8_t type = METHOD_FRAME;
-  uint16_t channel = BASE_COMMUNICATION_CHANNEL;
-
-  uint16_t class = CONNECTION_CLASS;
-  uint16_t method = CONNECTION_CLOSE_OK;
-
-  uint32_t payload_size = sizeof(class) + sizeof(method);
-
-  /* + 1 because of frame-end %xCE */
-  uint32_t message_size =
-      sizeof(type) + sizeof(channel) + sizeof(payload_size) + payload_size + 1;
-
-  uint8_t message[message_size];
-
-  void *index = message;
-
-  message_build_b(&index, type);
-  message_build_s(&index, channel);
-  message_build_l(&index, payload_size);
-  message_build_s(&index, class);
-  message_build_s(&index, method);
-  message_build_b(&index, FRAME_END);
-
-  Write(connection->socket, (const char *)message, index - (void *)message);
 }

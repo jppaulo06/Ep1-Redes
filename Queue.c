@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "Frame.h"
-#include "Queue.h"
 #include "Basic.h"
 #include "Connection.h"
+#include "Frame.h"
+#include "Queue.h"
 #include "super_header.h"
 
 /*====================================*/
@@ -15,27 +15,8 @@
 #define INITIAL_MAX_CONNECTIONS_QUEUES 120
 
 /*====================================*/
-/* PRIVATE ENUMS */
-/*====================================*/
-
-enum IMQP_Frame_Queue {
-  QUEUE_DECLARE = 10,
-  QUEUE_DECLARE_OK,
-};
-
-/*====================================*/
 /* PRIVATE STRUCTURES */
 /*====================================*/
-
-typedef struct {
-  uint16_t ticket;
-  uint8_t name_size;
-  char *name;
-  int max_connections;
-  int total_connections;
-  int round_robin;
-  Connection **connections;
-} IMQP_Queue;
 
 typedef struct {
   int total_connections;
@@ -54,49 +35,43 @@ static IMQP_Queue_List *queue_list;
 /* PRIVATE FUNCTIONS DECLARATIONS */
 /*====================================*/
 
+static void process_queue_declare(Connection* connection, Queue_Declare arguments);
+
 static IMQP_Queue_List *new_IMQP_Queue_List();
 static IMQP_Queue *new_IMQP_Queue(IMQP_Byte *argument);
-static void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
 
 static void add_to_queue_list(IMQP_Queue *queue);
 static void add_to_queue(IMQP_Queue *queue, Connection *connection);
 
-static Connection* get_connection_from_queue(const char *queue_name);
+static Connection *get_connection_from_queue(const char *queue_name);
 static Connection *get_next_connection_from_queue(IMQP_Queue *queue);
 static void print_queue_list();
-static void remove_current_connection(IMQP_Queue* queue);
+static void remove_current_connection(IMQP_Queue *queue);
 
-static int build_queue_declare_ok(IMQP_Byte* message, IMQP_Queue* queue);
+static int build_queue_declare_ok(IMQP_Byte *message, IMQP_Queue *queue);
 
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
 
-void process_frame_queue(Connection *connection, IMQP_Frame *frame) {
-  IMQP_Byte *arguments = frame->payload.method_pl.arguments;
-  IMQP_Queue *queue = NULL;
-  switch ((enum IMQP_Frame_Queue)frame->payload.method_pl.method) {
+void process_frame_queue(Connection *connection, Method_Payload payload) {
+  switch ((enum IMQP_Frame_Queue)payload.method) {
   case QUEUE_DECLARE:
-    if (queue_list == NULL) {
-      queue_list = new_IMQP_Queue_List();
-    }
-    print_queue_list();
-    queue = new_IMQP_Queue(arguments);
-    add_to_queue_list(queue);
-    send_queue_declare_ok(connection, queue);
+    process_queue_declare(connection, payload.arguments.queue_declare);
     break;
   case QUEUE_DECLARE_OK:
-    THROW("Wtf is happening? Am I talking to a server?");
+    fprintf(stderr, "[WARNING] Received a not expected queue declare ok\n");
     break;
   default:
-    THROW("Not suported");
+    fprintf(stderr, "[WARNING] Received a not expected frame method\n");
   }
 }
 
-void publish_to_queue(char* queue_name, char* body, int body_size){
-  Connection* connection = get_connection_from_queue(queue_name);
+void publish_to_queue(char *queue_name, char *body, int body_size) {
+  Connection *connection = get_connection_from_queue(queue_name);
   if (connection == NULL) {
-    fprintf(stderr, "[WARNING] Queue %s not found or it is empty\n", queue_name);
+    fprintf(stderr, "[WARNING] Queue %s not found or it's empty\n",
+            queue_name);
     return;
   }
   send_basic_deliver(connection, queue_name, body, body_size);
@@ -115,6 +90,15 @@ void put_into_queue(Connection *connection, const char *queue_name) {
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
 
+void process_queue_declare(Connection* connection, Queue_Declare arguments) {
+  if (queue_list == NULL) {
+    queue_list = new_IMQP_Queue_List();
+  }
+  IMQP_Queue *queue = new_IMQP_Queue(arguments.queue_name);
+  add_to_queue_list(queue);
+  send_queue_declare_ok(connection, queue);
+}
+
 IMQP_Queue_List *new_IMQP_Queue_List() {
   queue_list = Malloc(sizeof(*queue_list));
   queue_list->list =
@@ -126,21 +110,13 @@ IMQP_Queue_List *new_IMQP_Queue_List() {
   return queue_list;
 }
 
-IMQP_Queue *new_IMQP_Queue(IMQP_Byte *arguments) {
+IMQP_Queue *new_IMQP_Queue(char queue_name[MAX_FRAME_SIZE]) {
   IMQP_Queue *queue = Malloc(sizeof(*queue));
 
-  void *index = arguments;
-
-  queue->ticket = message_break_s(&index);
-  queue->name_size = message_break_b(&index);
-
   queue->name = Malloc(queue->name_size + 1);
-
-  message_break_n(queue->name, &index, queue->name_size);
-  queue->name[queue->name_size] = '\x00';
+  strcpy(queue->name, queue_name);
 
   queue->connections = Malloc(sizeof(Connection) * INITIAL_MAX_CONNECTIONS);
-
   queue->max_connections = INITIAL_MAX_CONNECTIONS;
   queue->total_connections = 0;
   queue->round_robin = 0;
@@ -185,7 +161,7 @@ Connection *get_connection_from_queue(const char *queue_name) {
 Connection *get_next_connection_from_queue(IMQP_Queue *queue) {
   if (queue->round_robin < queue->total_connections) {
     Connection *connection = queue->connections[queue->round_robin];
-    if(connection->is_closed){
+    if (connection->is_closed) {
       remove_current_connection(queue);
       return get_next_connection_from_queue(queue);
     }
@@ -195,25 +171,23 @@ Connection *get_next_connection_from_queue(IMQP_Queue *queue) {
   return NULL;
 }
 
-void remove_current_connection(IMQP_Queue* queue){
+void remove_current_connection(IMQP_Queue *queue) {
   int to_remove_index = queue->round_robin;
   Connection *to_remove_connection = queue->connections[to_remove_index];
 
-
   /* if the connection is not on the top */
-  if(queue->round_robin < queue->total_connections - 1){
+  if (queue->round_robin < queue->total_connections - 1) {
     /* pull every connection* */
-    for(int i = to_remove_index + 1; i < queue->total_connections; i++){
+    for (int i = to_remove_index + 1; i < queue->total_connections; i++) {
       queue->connections[i - 1] = queue->connections[i];
     }
-  }
-  else if(queue->round_robin == queue->total_connections - 1){
+  } else if (queue->round_robin == queue->total_connections - 1) {
     /* reset round robin to prevent invalid memory access */
     queue->round_robin = 0;
   }
 
   queue->total_connections--;
-  free_connection(to_remove_connection);
+  free(to_remove_connection);
 }
 
 void print_queue_list() {
@@ -224,49 +198,5 @@ void print_queue_list() {
       printf("    %d.%d Socket: %d\n", i, j, queue->connections[j]->socket);
     }
   }
-}
-
-/* SEND AND BUILD FRAMES */
-
-void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
-
-  IMQP_Byte message[MAX_FRAME_SIZE];
-
-  int message_size = 0;
-
-  message_size += build_queue_declare_ok(message, queue);
-
-  Write(connection->socket, (const char *)message, message_size);
-}
-
-int build_queue_declare_ok(IMQP_Byte* message, IMQP_Queue* queue){
-
-  uint8_t type = METHOD_FRAME;
-  uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
-
-  uint16_t class = QUEUE_CLASS;
-  uint16_t method = QUEUE_DECLARE_OK;
-  uint32_t message_count = 0;
-  uint32_t consumer_count = 0;
-
-  /* + 1 because of name size */
-  uint32_t payload_size = sizeof(class) + sizeof(method) +
-                          (1 + queue->name_size) + sizeof(message_count) +
-                          sizeof(consumer_count);
-
-  void *offset = message;
-
-  message_build_b(&offset, type);
-  message_build_s(&offset, channel);
-  message_build_l(&offset, payload_size);
-  message_build_s(&offset, class);
-  message_build_s(&offset, method);
-  message_build_b(&offset, queue->name_size);
-  message_build_n(&offset, queue->name, queue->name_size);
-  message_build_l(&offset, message_count);
-  message_build_l(&offset, consumer_count);
-  message_build_b(&offset, FRAME_END);
-
-  return offset - (void *)message;
 }
 
