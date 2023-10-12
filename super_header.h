@@ -14,7 +14,7 @@
 void Throw(const char *CUSTOM_ERROR_STRING, const char *file,
                   const char *function, int line);
 
-ssize_t Read_func(int fildes, const char *buf, size_t nbyte,
+ssize_t Read_func(int fildes, char *buf, size_t nbyte,
                          const char *file, const char *function, int line);
 
 ssize_t Write_func(int fildes, const char *buf, size_t nbyte,

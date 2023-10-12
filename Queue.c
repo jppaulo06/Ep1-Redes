@@ -29,16 +29,17 @@ typedef struct {
 /* PRIVATE VARIABLES */
 /*====================================*/
 
-static IMQP_Queue_List *queue_list;
+static IMQP_Queue_List queue_list;
 
 /*====================================*/
 /* PRIVATE FUNCTIONS DECLARATIONS */
 /*====================================*/
 
-static void process_queue_declare(Connection* connection, Queue_Declare arguments);
+static void process_queue_declare(Connection *connection,
+                                  Queue_Declare arguments);
 
-static IMQP_Queue_List *new_IMQP_Queue_List();
-static IMQP_Queue *new_IMQP_Queue(IMQP_Byte *argument);
+static void initilize_IMQP_Queue_List();
+static IMQP_Queue *new_IMQP_Queue(char queue_name[MAX_QUEUE_NAME_SIZE]);
 
 static void add_to_queue_list(IMQP_Queue *queue);
 static void add_to_queue(IMQP_Queue *queue, Connection *connection);
@@ -48,69 +49,71 @@ static Connection *get_next_connection_from_queue(IMQP_Queue *queue);
 static void print_queue_list();
 static void remove_current_connection(IMQP_Queue *queue);
 
-static int build_queue_declare_ok(IMQP_Byte *message, IMQP_Queue *queue);
-
 /*====================================*/
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
 
-void process_frame_queue(Connection *connection, Method_Payload payload) {
+uint64_t process_frame_queue(Connection *connection, Method_Payload payload) {
+  uint64_t flags = 0;
   switch ((enum IMQP_Frame_Queue)payload.method) {
   case QUEUE_DECLARE:
     process_queue_declare(connection, payload.arguments.queue_declare);
     break;
-  case QUEUE_DECLARE_OK:
-    fprintf(stderr, "[WARNING] Received a not expected queue declare ok\n");
-    break;
   default:
-    fprintf(stderr, "[WARNING] Received a not expected frame method\n");
+    flags |= NOT_EXPECTED_METHOD;
   }
+  return flags;
 }
 
-void publish_to_queue(char *queue_name, char *body, int body_size) {
+uint64_t publish_to_queue(char *queue_name, char *body, int body_size) {
   Connection *connection = get_connection_from_queue(queue_name);
   if (connection == NULL) {
-    fprintf(stderr, "[WARNING] Queue %s not found or it's empty\n",
-            queue_name);
-    return;
+    return QUEUE_NOT_FOUND_OR_EMPTY;
   }
   send_basic_deliver(connection, queue_name, body, body_size);
+
+#ifdef SNIFF_MODE
+  print_queue_list();
+#endif /* SNIFF_MODE */
+  return NO_ERROR;
 }
 
-void put_into_queue(Connection *connection, const char *queue_name) {
-  for (int i = 0; i < queue_list->total_queues; i++) {
-    IMQP_Queue *queue = queue_list->list[i];
+uint64_t put_into_queue(Connection *connection, const char *queue_name) {
+  for (int i = 0; i < queue_list.total_queues; i++) {
+    IMQP_Queue *queue = queue_list.list[i];
     if (strcmp(queue->name, queue_name) == 0) {
       add_to_queue(queue, connection);
+      return NO_ERROR;
     }
   }
+  return QUEUE_NOT_FOUND_OR_EMPTY;
 }
 
 /*====================================*/
 /* PRIVATE FUNCTIONS DEFINITIONS */
 /*====================================*/
 
-void process_queue_declare(Connection* connection, Queue_Declare arguments) {
-  if (queue_list == NULL) {
-    queue_list = new_IMQP_Queue_List();
+void process_queue_declare(Connection *connection, Queue_Declare arguments) {
+  if (queue_list.list == NULL) {
+    initilize_IMQP_Queue_List();
   }
   IMQP_Queue *queue = new_IMQP_Queue(arguments.queue_name);
   add_to_queue_list(queue);
   send_queue_declare_ok(connection, queue);
+
+#ifdef SNIFF_MODE
+  print_queue_list();
+#endif /* SNIFF_MODE */
 }
 
-IMQP_Queue_List *new_IMQP_Queue_List() {
-  queue_list = Malloc(sizeof(*queue_list));
-  queue_list->list =
+void initilize_IMQP_Queue_List() {
+  queue_list.list =
       Malloc(sizeof(IMQP_Queue *) * INITIAL_MAX_CONNECTIONS_QUEUES);
 
-  queue_list->max_queues = INITIAL_MAX_CONNECTIONS;
-  queue_list->total_queues = 0;
-
-  return queue_list;
+  queue_list.max_queues = INITIAL_MAX_CONNECTIONS;
 }
 
-IMQP_Queue *new_IMQP_Queue(char queue_name[MAX_FRAME_SIZE]) {
+IMQP_Queue *new_IMQP_Queue(char queue_name[MAX_QUEUE_NAME_SIZE]) {
   IMQP_Queue *queue = Malloc(sizeof(*queue));
 
   queue->name = Malloc(queue->name_size + 1);
@@ -125,18 +128,18 @@ IMQP_Queue *new_IMQP_Queue(char queue_name[MAX_FRAME_SIZE]) {
 }
 
 void add_to_queue_list(IMQP_Queue *queue) {
-  for (int i = 0; i < queue_list->total_queues; i++) {
-    IMQP_Queue *saved_queue = queue_list->list[i];
+  for (int i = 0; i < queue_list.total_queues; i++) {
+    IMQP_Queue *saved_queue = queue_list.list[i];
     if (strcmp(saved_queue->name, queue->name) == 0) {
       return;
     }
   }
-  if (queue_list->total_queues == queue_list->max_queues) {
-    queue_list->max_queues *= 2;
-    queue_list->list = realloc(queue_list->list, queue_list->max_queues);
+  if (queue_list.total_queues == queue_list.max_queues) {
+    queue_list.max_queues *= 2;
+    queue_list.list = realloc(queue_list.list, queue_list.max_queues);
   }
-  queue_list->list[queue_list->total_queues] = queue;
-  queue_list->total_queues += 1;
+  queue_list.list[queue_list.total_queues] = queue;
+  queue_list.total_queues += 1;
 }
 
 void add_to_queue(IMQP_Queue *queue, Connection *connection) {
@@ -146,11 +149,15 @@ void add_to_queue(IMQP_Queue *queue, Connection *connection) {
   }
   queue->connections[queue->total_connections] = connection;
   queue->total_connections += 1;
+
+#ifdef SNIFF_MODE
+  print_queue_list();
+#endif /* SNIFF_MODE */
 }
 
 Connection *get_connection_from_queue(const char *queue_name) {
-  for (int i = 0; i < queue_list->total_queues; i++) {
-    IMQP_Queue *queue = queue_list->list[i];
+  for (int i = 0; i < queue_list.total_queues; i++) {
+    IMQP_Queue *queue = queue_list.list[i];
     if (strcmp(queue->name, queue_name) == 0) {
       return get_next_connection_from_queue(queue);
     }
@@ -161,7 +168,7 @@ Connection *get_connection_from_queue(const char *queue_name) {
 Connection *get_next_connection_from_queue(IMQP_Queue *queue) {
   if (queue->round_robin < queue->total_connections) {
     Connection *connection = queue->connections[queue->round_robin];
-    if (connection->is_closed) {
+    if (connection->closed) {
       remove_current_connection(queue);
       return get_next_connection_from_queue(queue);
     }
@@ -191,12 +198,14 @@ void remove_current_connection(IMQP_Queue *queue) {
 }
 
 void print_queue_list() {
-  for (int i = 0; i < queue_list->total_queues; i++) {
-    IMQP_Queue *queue = queue_list->list[i];
-    printf("\n%d Nome: %s\n", i, queue->name);
+  printf("[QUEUES]\n");
+  for (int i = 0; i < queue_list.total_queues; i++) {
+    IMQP_Queue *queue = queue_list.list[i];
+    printf("  %d Name: %s\n", i, queue->name);
     for (int j = 0; j < queue->total_connections; j++) {
+      if (queue->connections[j]->closed)
+        continue;
       printf("    %d.%d Socket: %d\n", i, j, queue->connections[j]->socket);
     }
   }
 }
-

@@ -29,6 +29,6 @@ enum IMQP_Frame_Connection {
 
 void close_connection(Connection *connection);
 void process_connection(int socket);
-void process_frame_connection(Connection *connection, Method_Payload payload);
+uint64_t process_frame_connection(Connection *connection, Method_Payload payload);
 
 #endif

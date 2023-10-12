@@ -27,7 +27,7 @@ void Throw(const char *CUSTOM_ERROR_STRING, const char *file,
   exit(1);
 }
 
-ssize_t Read_func(int fildes, const char *buf, size_t nbyte, const char *file,
+ssize_t Read_func(int fildes, char *buf, size_t nbyte, const char *file,
                   const char *function, int line) {
   ssize_t n;
   if ((n = read(fildes, (void *)buf, nbyte)) > 0) {
@@ -47,8 +47,9 @@ ssize_t Write_func(int fildes, const char *buf, size_t nbyte, const char *file,
   return 1;
 }
 
-void *Malloc_func(size_t size, const char* file, const char *function, int line) {
-  void* pointer;
+void *Malloc_func(size_t size, const char *file, const char *function,
+                  int line) {
+  void *pointer;
   if ((pointer = malloc(size)) != NULL) {
     return pointer;
   }

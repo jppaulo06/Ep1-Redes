@@ -13,7 +13,7 @@
 
 /*
  * This file defines the most low level functions, such as deserialize,
- * serialize and send packeges stuff.
+ * serialize and send packages stuff.
  */
 
 /*====================================*/
@@ -33,6 +33,8 @@ extern const char *FAKE_CHANNEL_OPEN_OK;
 extern const int FAKE_CHANNEL_OPEN_OK_SIZE;
 
 extern void define_consumer_tag(Connection *connection);
+
+extern SOAG son_of_a_greve;
 
 /*====================================*/
 /* PRIVATE MACROS */
@@ -55,58 +57,66 @@ extern void define_consumer_tag(Connection *connection);
 /* PRIVATE FUNCTIONS DECLARATIONS */
 /*====================================*/
 
-static void receive_frame(Connection *connection, IMQP_Frame *frame);
+static uint64_t receive_frame(Connection *connection, IMQP_Frame *frame);
+static uint64_t receive_frame_header(Connection *connection, IMQP_Frame *frame);
+static uint64_t receive_frame_payload(Connection *connection,
+                                      IMQP_Frame *frame);
+static uint64_t receive_frame_end(Connection *connection);
 
-static void receive_frame_header(Connection *connection, IMQP_Frame *frame);
-static void receive_frame_payload(Connection *connection, IMQP_Frame *frame);
-static void receive_frame_end(Connection *connection);
+static uint64_t process_frame(Connection *connection, IMQP_Frame frame);
 
-static void process_frame(Connection *connection, IMQP_Frame frame);
+static uint64_t process_method_frame(Connection *connection,
+                                     Method_Payload payload);
+static uint64_t process_header_frame(Connection *connection,
+                                     Head_Payload payload);
+static uint64_t process_body_frame(Connection *connection,
+                                   Body_Payload payload);
 
-static void process_method_frame(Connection *connection,
-                                 Method_Payload payload);
-static void process_header_frame(Connection *connection, Head_Payload payload);
-static void process_body_frame(Connection *connection, Body_Payload payload);
-
-static void break_frame_header(IMQP_Byte *message, IMQP_Frame *frame);
+static uint64_t break_frame_header(IMQP_Byte *message, IMQP_Frame *frame);
 
 /* METHOD FRAMES */
-static void break_method_frame_payload(IMQP_Byte *message,
-                                       Method_Payload *frame, int payload_size);
+static uint64_t break_method_frame_payload(IMQP_Byte *message,
+                                           Method_Payload *frame,
+                                           int payload_size);
 
-static void break_method_frame_arguments(IMQP_Byte *message,
-                                         Method_Payload *payload);
+static uint64_t break_method_frame_arguments(IMQP_Byte *message,
+                                             Method_Payload *payload);
 
 /* QUEUE */
-static void break_frame_method_queue_arguments(IMQP_Byte *message,
-                                               Method_Payload *payload);
-static void break_queue_declare_arguments(IMQP_Byte *message,
-                                          Queue_Declare *arguments);
+static uint64_t break_frame_method_queue_arguments(IMQP_Byte *message,
+                                                   Method_Payload *payload);
+static uint64_t break_queue_declare_arguments(IMQP_Byte *message,
+                                              Queue_Declare *arguments);
 
 /* CONNECTION */
-static void break_frame_method_connection_arguments(IMQP_Byte *message,
-                                                    Method_Payload *payload);
-static void break_connection_tune_ok_arguments(IMQP_Byte *message,
-                                               Connection_Tune_Ok *arguments);
+static uint64_t
+break_frame_method_connection_arguments(IMQP_Byte *message,
+                                        Method_Payload *payload);
+static uint64_t
+break_connection_tune_ok_arguments(IMQP_Byte *message,
+                                   Connection_Tune_Ok *arguments);
 
 /* CHANNEL */
-static void break_frame_method_channel_arguments(IMQP_Byte *message,
-                                                 Method_Payload *payload);
+static uint64_t break_frame_method_channel_arguments(IMQP_Byte *message,
+                                                     Method_Payload *payload);
 
 /* BASIC */
-static void break_frame_method_basic_arguments(IMQP_Byte *message,
-                                               Method_Payload *payload);
-static void break_basic_consume_arguments(IMQP_Byte *message,
-                                          Basic_Consume *arguments);
-static void break_basic_publish_arguments(IMQP_Byte *message,
-                                          Basic_Publish *arguments);
+static uint64_t break_frame_method_basic_arguments(IMQP_Byte *message,
+                                                   Method_Payload *payload);
+static uint64_t break_basic_consume_arguments(IMQP_Byte *message,
+                                              Basic_Consume *arguments);
+static uint64_t break_basic_publish_arguments(IMQP_Byte *message,
+                                              Basic_Publish *arguments);
 
-static void break_header_frame_payload(IMQP_Byte *message,
-                                       Head_Payload *payload);
-static void break_body_frame_payload(IMQP_Byte *message, Body_Payload *payload);
+static uint64_t break_header_frame_payload(IMQP_Byte *message,
+                                           Head_Payload *payload);
+static uint64_t break_body_frame_payload(IMQP_Byte *message,
+                                         Body_Payload *payload);
 
 /* Build frames */
 static int build_queue_declare_ok(IMQP_Byte *message, IMQP_Queue *queue);
+static int build_connection_tune(IMQP_Byte *message, Connection *connection);
+static int build_connection_start(IMQP_Byte *message, Connection *connection);
 static int build_connection_close_ok(IMQP_Byte *message);
 static int build_basic_consume_ok(Connection *connection, IMQP_Byte *message);
 static int build_basic_deliver_method(Connection *connection,
@@ -114,7 +124,7 @@ static int build_basic_deliver_method(Connection *connection,
 static int build_basic_deliver_header(IMQP_Byte *message, uint64_t body_size);
 static int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
                                     uint32_t body_size);
-static int build_channel_close_ok(IMQP_Byte* message);
+static int build_channel_close_ok(IMQP_Byte *message);
 
 /* serialization functions */
 
@@ -126,207 +136,252 @@ static void message_break_n(void *content, void **index, uint16_t n);
 
 /* deserialization functions */
 
-void message_build_b(void **index, uint8_t content);
-void message_build_s(void **index, uint16_t content);
-void message_build_l(void **index, uint32_t content);
-void message_build_ll(void **index, uint64_t content);
-void message_build_n(void **index, void *content, uint16_t n);
+static void message_build_b(void **index, uint8_t content);
+static void message_build_s(void **index, uint16_t content);
+static void message_build_l(void **index, uint32_t content);
+static void message_build_ll(void **index, uint64_t content);
+static void message_build_n(void **index, void *content, uint16_t n);
 
 /*====================================*/
 /* UNIQUE PUBLIC ENTRYPOINT */
 /*====================================*/
 
-void receive_and_process_frame(Connection *connection) {
-  if (connection->is_closed || connection->is_consumer) {
-    return;
+uint64_t receive_and_process_frame(Connection *connection) {
+  uint64_t flags = NO_ERROR;
+  if (connection->closed || connection->consumer) {
+    return flags;
   }
   IMQP_Frame frame = {0};
-  receive_frame(connection, &frame);
-  process_frame(connection, frame);
-  receive_and_process_frame(connection);
+
+  if ((flags |= receive_frame(connection, &frame)) & ERRORS)
+    return flags;
+
+  if ((flags |= process_frame(connection, frame)) & ERRORS) {
+    printf("Deu pau!\n");
+    return flags;
+  }
+
+  if (flags) {
+    printf("Alguma coisa deu errado... \n");
+  }
+
+  return flags | receive_and_process_frame(connection);
 }
 
 /*====================================*/
 /* PROCESSING FRAMES */
 /*====================================*/
 
-void process_frame(Connection *connection, IMQP_Frame frame) {
+uint64_t process_frame(Connection *connection, IMQP_Frame frame) {
+  uint64_t flags = 0;
   switch ((enum IMQP_Frame_t)frame.type) {
   case METHOD_FRAME:
-    process_method_frame(connection, frame.payload.method_pl);
+    flags |= process_method_frame(connection, frame.payload.method_pl);
     break;
   case HEADER_FRAME:
-    process_header_frame(connection, frame.payload.header_pl);
+    flags |= process_header_frame(connection, frame.payload.header_pl);
     break;
   case BODY_FRAME:
-    process_body_frame(connection, frame.payload.body_pl);
+    flags |= process_body_frame(connection, frame.payload.body_pl);
     break;
   case HEARTBEAT_FRAME:
-    fprintf(stderr, "[WARNING] Heartbeat (not supported) received.\n");
-    break;
-  }
-}
-
-void process_method_frame(Connection *connection, Method_Payload payload) {
-
-  #ifdef DEBUG_MODE
-    printf("[METHOD FRAME] Class: %d - Method: %d\n", payload.class_method, payload.method);
-  #endif /* DEBUG_MODE */
-
-  switch ((enum IMQP_Frame_Class)payload.class_method) {
-  case QUEUE_CLASS:
-    process_frame_queue(connection, payload);
-    break;
-  case CONNECTION_CLASS:
-    process_frame_connection(connection, payload);
-    break;
-  case CHANNEL_CLASS:
-    process_frame_channel(connection, payload);
-    break;
-  case BASIC_CLASS:
-    process_frame_basic(connection, payload);
+    flags |= HEARTBEAT_IGNORED;
     break;
   default:
-    fprintf(stderr, "[ERROR] class_method: %d", payload.class_method);
-    THROW("Not implemented class");
+    flags |= INVALID_FRAME_TYPE;
   }
+  return flags;
 }
 
-void process_header_frame(Connection *connection, Head_Payload payload) {
+uint64_t process_method_frame(Connection *connection, Method_Payload payload) {
+  uint64_t flags = 0;
+#ifdef DEBUG_MODE
+  printf("[METHOD FRAME] Class: %d - Method: %d\n", payload.class_method,
+         payload.method);
+#endif /* DEBUG_MODE */
+  switch ((enum IMQP_Frame_Class)payload.class_method) {
+  case QUEUE_CLASS:
+    flags |= process_frame_queue(connection, payload);
+    break;
+  case CONNECTION_CLASS:
+    flags |= process_frame_connection(connection, payload);
+    break;
+  case CHANNEL_CLASS:
+    flags |= process_frame_channel(connection, payload);
+    break;
+  case BASIC_CLASS:
+    flags |= process_frame_basic(connection, payload);
+    break;
+  default:
+    flags |= NOT_EXPECTED_CLASS;
+  }
+  return flags;
+}
 
-  #ifdef DEBUG_MODE
-    printf("[HEADER FRAME] Class: %d\n", payload.class_header);
-  #endif /* DEBUG_MODE */
-
+uint64_t process_header_frame(Connection *connection, Head_Payload payload) {
+  uint64_t flags = 0;
+#ifdef DEBUG_MODE
+  printf("[HEADER FRAME] Class: %d\n", payload.class_header);
+#endif /* DEBUG_MODE */
   switch ((enum IMQP_Frame_Class)payload.class_header) {
   case BASIC_CLASS:
     define_pub_body_size(payload.body_size);
     break;
   default:
-    THROW("Not implemented class");
+    flags |= NOT_EXPECTED_CLASS;
   }
+  return flags;
 }
 
-void process_body_frame(Connection *connection, Body_Payload payload) {
-
-  #ifdef DEBUG_MODE
-    printf("[BODY FRAME] Body: %s\n", payload.body);
-  #endif /* DEBUG_MODE */
-
+uint64_t process_body_frame(Connection *connection, Body_Payload payload) {
+  uint64_t flags = 0;
+#ifdef DEBUG_MODE
+  printf("[BODY FRAME] Body: %s\n", payload.body);
+#endif /* DEBUG_MODE */
   define_pub_body(payload.body);
-  finish_pub();
+  flags |= finish_pub();
+  return flags;
 }
 
 /*====================================*/
 /* GENERAL FRAME FUNCTIONS */
 /*====================================*/
 
-void receive_frame(Connection *connection, IMQP_Frame *frame) {
-  receive_frame_header(connection, frame);
-  receive_frame_payload(connection, frame);
-  receive_frame_end(connection);
+uint64_t receive_frame(Connection *connection, IMQP_Frame *frame) {
+  uint64_t flags = 0;
+  flags |= receive_frame_header(connection, frame);
+  flags |= receive_frame_payload(connection, frame);
+  flags |= receive_frame_end(connection);
+  return flags;
 }
 
-void receive_frame_header(Connection *connection, IMQP_Frame *frame) {
+uint64_t receive_frame_header(Connection *connection, IMQP_Frame *frame) {
+  uint64_t flags = NO_ERROR;
   IMQP_Byte message[20] = {0};
-  Read(connection->socket, message, 7);
-  break_frame_header(message, frame);
+  recv(connection->socket, message, 7, MSG_WAITALL);
+  flags |= break_frame_header(message, frame);
+  return flags;
 }
 
-void receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
+uint64_t receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
+  uint64_t flags = NO_ERROR;
+
   IMQP_Byte message[frame->payload_size];
-  Read(connection->socket, message, frame->payload_size);
-  IMQP_Payload* payload = &frame->payload;
+  recv(connection->socket, message, frame->payload_size, MSG_WAITALL);
+  IMQP_Payload *payload = &frame->payload;
+
   switch (frame->type) {
   case METHOD_FRAME:
-    break_method_frame_payload(message, &payload->method_pl,
-                               frame->payload_size);
+    flags |= break_method_frame_payload(message, &payload->method_pl,
+                                        frame->payload_size);
     break;
   case HEADER_FRAME:
-    break_header_frame_payload(message, &payload->header_pl);
+    flags |= break_header_frame_payload(message, &payload->header_pl);
     break;
   case BODY_FRAME:
-    break_body_frame_payload(message, &payload->body_pl);
+    flags |= break_body_frame_payload(message, &payload->body_pl);
     break;
   case HEARTBEAT_FRAME:
-    fprintf(stderr, "[WARNING] Heartbeat (not supported) received.\n");
+    flags |= HEARTBEAT_IGNORED;
     break;
   }
+  return flags;
 }
 
-void receive_frame_end(Connection *connection) {
-  IMQP_Byte garbage = 0;
-  Read(connection->socket, &garbage, 1);
+uint64_t receive_frame_end(Connection *connection) {
+  IMQP_Byte frame_end = 0;
+  recv(connection->socket, &frame_end, 1, MSG_WAITALL);
+  if (frame_end != '\xce') {
+    return INVALID_FRAME;
+  }
+  return NO_ERROR;
 }
 
 /*====================================*/
 /* BREAKING FRAMES */
 /*====================================*/
 
-void break_frame_header(IMQP_Byte *message, IMQP_Frame *frame) {
+uint64_t break_frame_header(IMQP_Byte *message, IMQP_Frame *frame) {
   void *offset = message;
+
   frame->type = message_break_b(&offset);
+  if (frame->type >= MAX_FRAME_TYPE)
+    return INVALID_FRAME_TYPE;
+
   frame->channel = message_break_s(&offset);
+  if (frame->channel != BASE_COMMUNICATION_CHANNEL &&
+      frame->channel != UNIQUE_COMMUNICATION_CHANNEL)
+    return INVALID_FRAME_CHANNEL;
+
   frame->payload_size = message_break_l(&offset);
+  return NO_ERROR;
 }
 
 /*====================================*/
 /* BREAKING METHOD FRAMES */
 /*====================================*/
 
-void receive_protocol_header(Connection *connection) {
-  char garbage[10] = {0};
-  Read(connection->socket, garbage, 10);
+uint64_t receive_protocol_header(Connection *connection) {
+  char garbage[8] = {0};
+  recv(connection->socket, garbage, 8, MSG_WAITALL);
+  return NO_ERROR;
 }
 
-void break_method_frame_payload(IMQP_Byte *message, Method_Payload *payload,
-                                int payload_size) {
+uint64_t break_method_frame_payload(IMQP_Byte *message, Method_Payload *payload,
+                                    int payload_size) {
+  uint64_t flags = NO_ERROR;
   void *offset = message;
   payload->class_method = message_break_s(&offset);
   payload->method = message_break_s(&offset);
 
   payload->arguments_size = payload_size - (offset - (void *)message);
 
-  break_method_frame_arguments(offset, payload);
+  flags |= break_method_frame_arguments(offset, payload);
+  return flags;
 }
 
-void break_method_frame_arguments(IMQP_Byte *message, Method_Payload *payload) {
+uint64_t break_method_frame_arguments(IMQP_Byte *message,
+                                      Method_Payload *payload) {
+  uint64_t flags = NO_ERROR;
   switch ((enum IMQP_Frame_Class)payload->class_method) {
   case QUEUE_CLASS:
-    break_frame_method_queue_arguments(message, payload);
+    flags |= break_frame_method_queue_arguments(message, payload);
     break;
   case CONNECTION_CLASS:
-    break_frame_method_connection_arguments(message, payload);
+    flags |= break_frame_method_connection_arguments(message, payload);
     break;
   case CHANNEL_CLASS:
-    break_frame_method_channel_arguments(message, payload);
+    flags |= break_frame_method_channel_arguments(message, payload);
     break;
   case BASIC_CLASS:
-    break_frame_method_basic_arguments(message, payload);
+    flags |= break_frame_method_basic_arguments(message, payload);
     break;
   default:
-    THROW("Not implemented class");
+    flags |= NOT_EXPECTED_CLASS;
+    break;
   }
+  return flags;
 }
 
 /************ QUEUE METHOD ************/
 
-void break_frame_method_queue_arguments(IMQP_Byte *message,
-                                        Method_Payload *payload) {
+uint64_t break_frame_method_queue_arguments(IMQP_Byte *message,
+                                            Method_Payload *payload) {
+  uint64_t flags = NO_ERROR;
   switch ((enum IMQP_Frame_Queue)payload->method) {
   case QUEUE_DECLARE:
-    break_queue_declare_arguments(message, &payload->arguments.queue_declare);
-    break;
-  case QUEUE_DECLARE_OK:
-    fprintf(stderr, "[WARNING] Received a not expected queue declare OK\n");
+    flags |= break_queue_declare_arguments(message,
+                                           &payload->arguments.queue_declare);
     break;
   default:
-    fprintf(stderr, "[WARNING] Received a not expected frame method\n");
+    flags |= NOT_EXPECTED_METHOD;
+    break;
   }
+  return flags;
 }
 
-void break_queue_declare_arguments(IMQP_Byte *message,
-                                   Queue_Declare *arguments) {
+uint64_t break_queue_declare_arguments(IMQP_Byte *message,
+                                       Queue_Declare *arguments) {
   void *offset = message;
   uint8_t name_size;
 
@@ -335,126 +390,155 @@ void break_queue_declare_arguments(IMQP_Byte *message,
 
   message_break_n(arguments->queue_name, &offset, name_size);
   arguments->queue_name[name_size] = '\x00';
+
+  if (strlen(arguments->queue_name) != name_size) {
+    return INVALID_NAME_SIZE;
+  }
+
+  return NO_ERROR;
 }
 
 /************ CONNECTION METHOD ************/
 
-void break_frame_method_connection_arguments(IMQP_Byte *message,
-                                             Method_Payload *payload) {
+uint64_t break_frame_method_connection_arguments(IMQP_Byte *message,
+                                                 Method_Payload *payload) {
+  uint64_t flags = NO_ERROR;
   switch ((enum IMQP_Frame_Connection)payload->method) {
-  case CONNECTION_START:
-    fprintf(stderr, "[WARNING] Received a not expected connection start\n");
-    break;
   case CONNECTION_START_OK:
-    // TODO: nothing happens here yet
-    break;
-  case CONNECTION_TUNE:
-    fprintf(stderr, "[WARNING] Received a not expected connection tune\n");
+    // Ignore the meta information entirely
     break;
   case CONNECTION_TUNE_OK:
-    break_connection_tune_ok_arguments(message,
-                                       &payload->arguments.connection_tune_ok);
+    flags |= break_connection_tune_ok_arguments(
+        message, &payload->arguments.connection_tune_ok);
     break;
   case CONNECTION_OPEN:
     // TODO: nothing happens here yet
     break;
-  case CONNECTION_OPEN_OK:
-    fprintf(stderr, "[WARNING] Received a not expected connection open ok\n");
-    break;
   case CONNECTION_CLOSE:
     // TODO: nothing happens here yet
     break;
-  case CONNECTION_CLOSE_OK:
-    fprintf(stderr, "[WARNING] Received a not expected connection close ok\n");
-    break;
   default:
-    fprintf(stderr, "[WARNING] Received a not expected frame method\n");
+    flags |= NOT_EXPECTED_METHOD;
+    break;
   }
+  return flags;
 }
 
-void break_connection_tune_ok_arguments(IMQP_Byte *message,
-                                        Connection_Tune_Ok *arguments) {
+uint64_t break_connection_tune_ok_arguments(IMQP_Byte *message,
+                                            Connection_Tune_Ok *arguments) {
+  // TODO: verify the content from here if it matches with my connection TUNE
   void *index = arguments;
 
   arguments->channel_max = message_break_s(&index);
   arguments->frame_max = message_break_l(&index);
+  arguments->heartbeat = message_break_s(&index);
+  return NO_ERROR;
 }
 
 /************ CHANNEL METHOD ************/
 
-void break_frame_method_channel_arguments(IMQP_Byte *message,
-                                          Method_Payload *payload) {
+uint64_t break_frame_method_channel_arguments(IMQP_Byte *message,
+                                              Method_Payload *payload) {
+  uint64_t flags = NO_ERROR;
   switch ((enum IMQP_Frame_Channel)payload->method) {
   case CHANNEL_OPEN:
     // TODO: nothing happens here yet
     break;
-  case CHANNEL_OPEN_OK:
-    fprintf(stderr, "[WARNING] Received a not expected channel open ok\n");
-    break;
   case CHANNEL_CLOSE:
     // TODO: nothing happens here yet
     break;
-  case CHANNEL_CLOSE_OK:
-    fprintf(stderr, "[WARNING] Received a not expected channel close ok\n");
-    break;
   default:
-    fprintf(stderr, "[WARNING] Received a not expected frame method\n");
+    flags |= NOT_EXPECTED_METHOD;
+    break;
   }
+  return flags;
 }
 
 /************ BASIC METHOD ************/
 
-void break_frame_method_basic_arguments(IMQP_Byte *message,
-                                        Method_Payload *payload) {
+uint64_t break_frame_method_basic_arguments(IMQP_Byte *message,
+                                            Method_Payload *payload) {
+  uint64_t flags = NO_ERROR;
   switch ((enum IMQP_Frame_Basic)payload->method) {
   case BASIC_CONSUME:
-    break_basic_consume_arguments(message, &payload->arguments.basic_consume);
-    break;
-  case BASIC_CONSUME_OK:
-    fprintf(stderr, "[WARNING] Received a not expected basic consume OK\n");
+    flags |= break_basic_consume_arguments(message,
+                                           &payload->arguments.basic_consume);
     break;
   case BASIC_PUBLISH:
-    break_basic_publish_arguments(message, &payload->arguments.basic_publish);
+    flags |= break_basic_publish_arguments(message,
+                                           &payload->arguments.basic_publish);
     break;
   default:
-    fprintf(stderr, "[WARNING] Received a not expected frame method\n");
+    flags |= NOT_EXPECTED_METHOD;
+    break;
   }
+  return flags;
 }
 
-void break_basic_consume_arguments(IMQP_Byte *message,
-                                   Basic_Consume *arguments) {
+uint64_t break_basic_consume_arguments(IMQP_Byte *message,
+                                       Basic_Consume *arguments) {
   void *offset = message;
   uint8_t name_size;
+  uint8_t ctag_size;
 
-  message_break_s(&offset);
+  arguments->ticket = message_break_s(&offset);
+
   name_size = message_break_b(&offset);
-
   message_break_n(arguments->queue_name, &offset, name_size);
   arguments->queue_name[name_size] = '\x00';
+
+  if (strlen(arguments->queue_name) != name_size) {
+    return INVALID_NAME_SIZE;
+  }
+
+  ctag_size = message_break_b(&offset);
+  if (ctag_size > CONSUMER_TAG_SIZE) {
+    return INVALID_CONSUMER_TAG_SIZE;
+  }
+  message_break_n(arguments->consumer_tag, &offset, ctag_size);
+
+  arguments->config_flags = message_break_b(&offset);
+  return NO_ERROR;
 }
 
-void break_basic_publish_arguments(IMQP_Byte *message,
-                                   Basic_Publish *arguments) {
+uint64_t break_basic_publish_arguments(IMQP_Byte *message,
+                                       Basic_Publish *arguments) {
   void *offset = message;
   uint8_t name_size;
+  uint8_t exchange_size;
 
-  message_break_s(&offset);
-  message_break_b(&offset);
+  arguments->ticket = message_break_s(&offset);
+
+  exchange_size = message_break_b(&offset);
+  message_break_n(arguments->exchange_name, &offset, exchange_size);
+  arguments->exchange_name[exchange_size] = '\x00';
+
+  if (strlen(arguments->exchange_name) != exchange_size) {
+    return INVALID_EXCHANGE_NAME_SIZE;
+  }
+
   name_size = message_break_b(&offset);
-
   message_break_n(arguments->queue_name, &offset, name_size);
   arguments->queue_name[name_size] = '\x00';
+
+  if (strlen(arguments->queue_name) != name_size) {
+    return INVALID_NAME_SIZE;
+  }
+
+  arguments->config_flags = message_break_b(&offset);
+  return NO_ERROR;
 }
 
 /*====================================*/
 /* BREAKING HEADER FRAMES */
 /*====================================*/
 
-void break_header_frame_payload(IMQP_Byte *message, Head_Payload *payload) {
+uint64_t break_header_frame_payload(IMQP_Byte *message, Head_Payload *payload) {
   void *offset = message;
   payload->class_header = message_break_s(&offset);
-  message_break_s(&offset);
+  payload->weight = message_break_s(&offset);
   payload->body_size = message_break_ll(&offset);
+  return NO_ERROR;
 }
 
 /*====================================*/
@@ -473,11 +557,17 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue) {
 /************ CONNECTION METHOD ************/
 
 void send_connection_start(Connection *connection) {
-  Write(connection->socket, FAKE_CONNECTION_START, FAKE_CONNECTION_START_SIZE);
+  IMQP_Byte message[MAX_FRAME_SIZE];
+  int message_size = 0;
+  message_size += build_connection_start(message, connection);
+  Write(connection->socket, (const char *)message, message_size);
 }
 
 void send_connection_tune(Connection *connection) {
-  Write(connection->socket, FAKE_CONNECTION_TUNE, FAKE_CONNECTION_TUNE_SIZE);
+  IMQP_Byte message[MAX_FRAME_SIZE];
+  int message_size = 0;
+  message_size += build_connection_tune(message, connection);
+  Write(connection->socket, (const char *)message, message_size);
 }
 
 void send_connection_open_ok(Connection *connection) {
@@ -579,6 +669,108 @@ int build_queue_declare_ok(IMQP_Byte *message, IMQP_Queue *queue) {
 }
 
 /************ CONNECTION METHOD ************/
+
+int build_connection_tune(IMQP_Byte *message, Connection *connection) {
+
+  uint8_t type = METHOD_FRAME;
+  uint16_t channel = BASE_COMMUNICATION_CHANNEL;
+
+  uint16_t class = CONNECTION_CLASS;
+  uint16_t method = CONNECTION_TUNE;
+
+  const Config *config = &(son_of_a_greve.config);
+
+  /* + 1 because of name size */
+  uint32_t payload_size = sizeof(class) + sizeof(method) + sizeof(config->channel_max) +
+    sizeof(config->frame_max) + sizeof(config->heartbeat);
+                          
+  void *offset = message;
+
+  message_build_b(&offset, type);
+  message_build_s(&offset, channel);
+  message_build_l(&offset, payload_size);
+
+  message_build_s(&offset, class);
+  message_build_s(&offset, method);
+
+  message_build_s(&offset, config->channel_max);
+  message_build_l(&offset, config->frame_max);
+  message_build_s(&offset, config->heartbeat);
+
+  message_build_b(&offset, FRAME_END);
+
+  return offset - (void *)message;
+}
+
+int build_connection_start(IMQP_Byte *message, Connection *connection) {
+
+  uint8_t type = METHOD_FRAME;
+  uint16_t channel = BASE_COMMUNICATION_CHANNEL;
+
+  uint16_t class = CONNECTION_CLASS;
+  uint16_t method = CONNECTION_START;
+
+  const char *str_cluster_name = "cluster_name";
+  const char *str_license = "license";
+  const char *str_product = "product";
+
+  const Meta *meta = &(son_of_a_greve.meta);
+
+  uint32_t properties_size = 1 + strlen(str_cluster_name) + 1 + 4 + strlen(meta->cluster_name) +
+      1 + strlen(str_license) + 1 + 4 + strlen(meta->license) +
+      1 + strlen(str_product) + 1 + 4 + strlen(meta->product);
+
+  uint32_t arguments_size =
+      sizeof(meta->major_version) + sizeof(meta->major_version) + 4 +
+      properties_size +
+      4 + strlen(meta->mechanisms) +
+      4 + strlen(meta->locales);
+
+  /* + 1 because of name size */
+  uint32_t payload_size = sizeof(class) + sizeof(method) + arguments_size;
+                          
+  void *offset = message;
+
+  message_build_b(&offset, type);
+  message_build_s(&offset, channel);
+  message_build_l(&offset, payload_size);
+
+  message_build_s(&offset, class);
+  message_build_s(&offset, method);
+
+  message_build_b(&offset, meta->major_version);
+  message_build_b(&offset, meta->minor_version);
+
+  message_build_l(&offset, properties_size);
+
+  message_build_b(&offset, strlen(str_cluster_name));
+  message_build_n(&offset, (void*)str_cluster_name, strlen(str_cluster_name));
+  message_build_b(&offset, 'S');
+  message_build_l(&offset, strlen(meta->cluster_name));
+  message_build_n(&offset, (void*)meta->cluster_name, strlen(meta->cluster_name));
+
+  message_build_b(&offset, strlen(str_license));
+  message_build_n(&offset, (void*)str_license, strlen(str_license));
+  message_build_b(&offset, 'S');
+  message_build_l(&offset, strlen(meta->license));
+  message_build_n(&offset, (void*)meta->license, strlen(meta->license));
+
+  message_build_b(&offset, strlen(str_product));
+  message_build_n(&offset, (void*)str_product, strlen(str_product));
+  message_build_b(&offset, 'S');
+  message_build_l(&offset, strlen(meta->product));
+  message_build_n(&offset, (void*)meta->product, strlen(meta->product));
+
+  message_build_l(&offset, strlen(meta->mechanisms));
+  message_build_n(&offset, (void*)meta->mechanisms, strlen(meta->mechanisms));
+
+  message_build_l(&offset, strlen(meta->locales));
+  message_build_n(&offset, (void*)meta->locales, strlen(meta->locales));
+
+  message_build_b(&offset, FRAME_END);
+
+  return offset - (void *)message;
+}
 
 int build_connection_close_ok(IMQP_Byte *message) {
   uint8_t type = METHOD_FRAME;
@@ -710,7 +902,7 @@ int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
 
 /************ CHANNEL METHOD ************/
 
-int build_channel_close_ok(IMQP_Byte* message){
+int build_channel_close_ok(IMQP_Byte *message) {
   uint8_t type = METHOD_FRAME;
   uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
 
@@ -731,16 +923,16 @@ int build_channel_close_ok(IMQP_Byte* message){
   return offset - (void *)message;
 }
 
-
 /*====================================*/
 /* BREAKING BODY FRAMES */
 /*====================================*/
 
-void break_body_frame_payload(IMQP_Byte *message, Body_Payload *payload) {
+uint64_t break_body_frame_payload(IMQP_Byte *message, Body_Payload *payload) {
   void *offset = message;
   int pub_size = get_pub_size();
   message_break_n(payload->body, &offset, pub_size);
   payload->body[pub_size] = '\x00';
+  return NO_ERROR;
 }
 /*====================================*/
 /* DESERIALIZATION HELPERS */

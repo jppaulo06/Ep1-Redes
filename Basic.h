@@ -25,10 +25,10 @@ enum IMQP_Frame_Basic {
 void send_basic_deliver(Connection *connection, char *queue_name,
                         IMQP_Byte *body, uint32_t body_size);
 
-void process_frame_basic(Connection *connection, Method_Payload payload);
+uint64_t process_frame_basic(Connection *connection, Method_Payload payload);
 void define_pub_body_size(uint64_t size);
 void define_pub_body(IMQP_Byte *body);
-void finish_pub();
+uint64_t finish_pub();
 int get_pub_size();
 
 #endif /* BASIC_H */

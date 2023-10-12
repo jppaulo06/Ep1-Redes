@@ -22,6 +22,6 @@ enum IMQP_Frame_Channel {
 /* PUBLIC FUNCTIONS DECLARATIONS */
 /*====================================*/
 
-void process_frame_channel(Connection *connection, Method_Payload payload);
+uint64_t process_frame_channel(Connection *connection, Method_Payload payload);
 
 #endif /* CHANNEL_H */

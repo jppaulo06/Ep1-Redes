@@ -23,6 +23,7 @@ enum IMQP_Frame_t {
   HEADER_FRAME,
   BODY_FRAME,
   HEARTBEAT_FRAME = 8,
+  MAX_FRAME_TYPE
 };
 
 enum IMQP_Frame_Class {
@@ -36,7 +37,8 @@ enum IMQP_Frame_Class {
 /* PUBLIC FUNCTIONS */
 /*====================================*/
 
-void receive_and_process_frame(Connection *connection);
+uint64_t receive_protocol_header(Connection *connection);
+uint64_t receive_and_process_frame(Connection *connection);
 
 void send_channel_open_ok(Connection *connection);
 void send_channel_close_ok(Connection *connection);
@@ -44,7 +46,6 @@ void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
 void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);
 void send_basic_consume_ok(Connection *connection);
 
-void receive_protocol_header(Connection *connection);
 void send_connection_start(Connection *connection);
 void send_connection_tune(Connection *connection);
 void send_connection_open_ok(Connection *connection);

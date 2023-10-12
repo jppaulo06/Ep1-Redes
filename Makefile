@@ -7,7 +7,7 @@ ARFLAGS= -rcv
 ################################
 
 CLASSES=Channel.o Connection.o Frame.o Queue.o Basic.o
-OBJS=${CLASSES} fake_payloads.o super_functions.o
+OBJS=${CLASSES} fake_payloads.o super_functions.o Flags.o
 LIB=imqp_functions.a
 MAIN=ep1_main.c
 
@@ -17,12 +17,13 @@ MAIN=ep1_main.c
 
 all: ep1
 
-Channel.o: Channel.h Frame.h super_header.h
-Connection.o: Connection.h Frame.h super_header.h
-Frame.o: Frame.h Connection.h Queue.h Channel.h super_header.h Basic.h
-Queue.o: Queue.h Frame.h super_header.h
-Basic.o: Basic.h Queue.h Frame.h super_header.h
-super_functions.o: super_header.h
+Channel.o: Channel.h Frame.h super_header.h IMQP.h
+Connection.o: Connection.h Frame.h super_header.h IMQP.h
+Frame.o: Frame.h Connection.h Queue.h Channel.h super_header.h Basic.h IMQP.h
+Queue.o: Queue.h Frame.h super_header.h IMQP.h
+Basic.o: Basic.h Queue.h Frame.h super_header.h IMQP.h
+super_functions.o: super_header.h IMQP.h
+Flags.o: Flags.h IMQP.h
 
 ${LIB}: ${OBJS}
 	${AR} ${ARFLAGS} ${LIB} ${OBJS}
