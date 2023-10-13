@@ -11,6 +11,7 @@
 /*====================================*/
 
 #include "super_header.h"
+#include <sys/socket.h>
 
 /*====================================*/
 /* FUNCTIONS */
@@ -27,10 +28,10 @@ void Throw(const char *CUSTOM_ERROR_STRING, const char *file,
   exit(1);
 }
 
-ssize_t Read_func(int fildes, char *buf, size_t nbyte, const char *file,
+ssize_t Recv_func(int fildes, char *buf, size_t nbyte, int flags, const char *file,
                   const char *function, int line) {
   ssize_t n;
-  if ((n = read(fildes, (void *)buf, nbyte)) > 0) {
+  if ((n = recv(fildes, (void *)buf, nbyte, flags)) >= 0) {
     return n;
   }
   Throw("Could not read from socket", file, function, line);

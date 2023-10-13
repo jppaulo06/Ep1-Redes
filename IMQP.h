@@ -32,6 +32,9 @@
 #define PRESERVE_CONNECTION 0
 #define EXIT_CONNECTION 1
 
+#define PROTOCOL_HEADER_SIZE 8
+#define PROTOCOL_HEADER "AMQP\x00\x00\x09\x01"
+
 /*====================================*/
 /* FUNDAMENTALS */
 /*====================================*/
@@ -61,9 +64,16 @@ typedef struct {
 } SOAG;
 
 typedef struct {
+  uint64_t size;
+  char queue_name[MAX_QUEUE_NAME_SIZE];
+  IMQP_Byte body[MAX_BODY_SIZE];
+} Publication;
+
+typedef struct {
   int socket;
   Meta meta;
   Config config;
+  Publication publication;
   IMQP_Byte consumer_tag[CONSUMER_TAG_SIZE];
   uint8_t consumer_tag_size;
   bool consumer;
@@ -74,7 +84,7 @@ typedef struct {
 typedef struct {
   uint16_t ticket;
   uint8_t name_size;
-  char *name;
+  char name[MAX_QUEUE_NAME_SIZE];
   int max_connections;
   int total_connections;
   int round_robin;
@@ -101,6 +111,11 @@ typedef struct {
 } Basic_Publish;
 
 typedef struct {
+  uint64_t delivery_tag;
+  uint8_t config_flags;
+} Basic_Ack;
+
+typedef struct {
   uint16_t ticket;
   char queue_name[MAX_QUEUE_NAME_SIZE];
 } Queue_Declare;
@@ -114,6 +129,7 @@ typedef struct {
 typedef union {
   Basic_Consume basic_consume; 
   Basic_Publish basic_publish;
+  Basic_Ack basic_ack;
   Queue_Declare queue_declare;
   Connection_Tune_Ok connection_tune_ok;
 } IMQP_Arguments;

@@ -21,7 +21,7 @@ enum IMQP_Frame_Queue {
 /*====================================*/
 
 uint64_t process_frame_queue(Connection *connection, Method_Payload payload);
-uint64_t publish_to_queue(char* queue_name, char* body, int body_size);
+uint64_t publish(Connection* connection);
 uint64_t put_into_queue(Connection* connection, const char* queue_name);
 
 #endif /* QUEUE_H */

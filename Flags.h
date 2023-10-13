@@ -22,16 +22,28 @@ enum Error {
   INVALID_FRAME_TYPE = (uint64_t)1 << 38,
   INVALID_FRAME_CHANNEL = (uint64_t)1 << 39,
   INVALID_TUNE = (uint64_t)1 << 40,
+  INVALID_PROTOCOL_HEADER = (uint64_t)1 << 41,
+  CONSUME_TO_INVALID_QUEUE = (uint64_t)1 << 42,
 };
 
-#define WARNINGS (~0 ^ ERRORS)
+#define WARNINGS ((uint64_t)~0 >> 44)
 #define FIRST_WARNING 1
-#define LAST_WARNING (1 << 31)
+#define LAST_WARNING ((uint64_t)1 << 19)
 
 enum Warning {
   NO_WARNING = 0,
   QUEUE_NOT_FOUND_OR_EMPTY = 1,
   HEARTBEAT_IGNORED = 1 << 1,
+  QUEUE_NAME_ALREADY_EXISTS = 1 << 2,
+};
+
+#define SIGNALS (~0 ^ (ERRORS | WARNINGS))
+#define FIRST_SIGNAL ((uint64_t)1 << 20)
+#define LAST_SIGNAL ((uint64_t)1 << 31)
+
+enum Signal {
+  NO_SIGNAL = 0,
+  CONNECTION_ENDED = 1 << 20,
 };
 
 #endif /* FLAGS_H */

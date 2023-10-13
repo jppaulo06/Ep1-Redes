@@ -14,6 +14,7 @@
 /* modified */
 #include "Connection.h"
 #include <assert.h>
+#include <pthread.h>
 
 #define LISTENQ 1
 #define MAXDATASIZE 100
@@ -42,7 +43,7 @@ const SOAG son_of_a_greve = {
 };
 
 int main(int argc, char **argv) {
-  int listenfd, connfd;
+  uint64_t listenfd, connfd;
   struct sockaddr_in servaddr = {0};
 
   if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -73,9 +74,10 @@ int main(int argc, char **argv) {
       exit(5);
     }
 
-    printf("[Uma conexão aberta] %d\n", connfd);
+    printf("[Uma conexão aberta] %ld\n", connfd);
 
-    process_connection(connfd);
+    pthread_t tid;
+    pthread_create(&tid, NULL, process_connection, (void*)connfd);
   }
   exit(0);
 }

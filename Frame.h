@@ -40,6 +40,8 @@ enum IMQP_Frame_Class {
 uint64_t receive_protocol_header(Connection *connection);
 uint64_t receive_and_process_frame(Connection *connection);
 
+void send_protocol_header(Connection* connection);
+
 void send_channel_open_ok(Connection *connection);
 void send_channel_close_ok(Connection *connection);
 void send_queue_declare_ok(Connection *connection, IMQP_Queue *queue);

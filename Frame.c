@@ -20,18 +20,6 @@
 /* EXTERN STUFF */
 /*====================================*/
 
-extern const char *FAKE_CONNECTION_START;
-extern const int FAKE_CONNECTION_START_SIZE;
-
-extern const char *FAKE_CONNECTION_TUNE;
-extern const int FAKE_CONNECTION_TUNE_SIZE;
-
-extern const char *FAKE_CONNECTION_OPEN_OK;
-extern const int FAKE_CONNECTION_OPEN_OK_SIZE;
-
-extern const char *FAKE_CHANNEL_OPEN_OK;
-extern const int FAKE_CHANNEL_OPEN_OK_SIZE;
-
 extern void define_consumer_tag(Connection *connection);
 
 extern SOAG son_of_a_greve;
@@ -107,16 +95,20 @@ static uint64_t break_basic_consume_arguments(IMQP_Byte *message,
                                               Basic_Consume *arguments);
 static uint64_t break_basic_publish_arguments(IMQP_Byte *message,
                                               Basic_Publish *arguments);
+static uint64_t break_basic_ack_arguments(IMQP_Byte *message,
+                                          Basic_Ack *arguments);
 
 static uint64_t break_header_frame_payload(IMQP_Byte *message,
                                            Head_Payload *payload);
 static uint64_t break_body_frame_payload(IMQP_Byte *message,
-                                         Body_Payload *payload);
+                                         Body_Payload *payload,
+                                         uint64_t pub_size);
 
 /* Build frames */
 static int build_queue_declare_ok(IMQP_Byte *message, IMQP_Queue *queue);
 static int build_connection_tune(IMQP_Byte *message, Connection *connection);
 static int build_connection_start(IMQP_Byte *message, Connection *connection);
+static int build_connection_open_ok(IMQP_Byte *message);
 static int build_connection_close_ok(IMQP_Byte *message);
 static int build_basic_consume_ok(Connection *connection, IMQP_Byte *message);
 static int build_basic_deliver_method(Connection *connection,
@@ -124,6 +116,7 @@ static int build_basic_deliver_method(Connection *connection,
 static int build_basic_deliver_header(IMQP_Byte *message, uint64_t body_size);
 static int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
                                     uint32_t body_size);
+static int build_channel_open_ok(IMQP_Byte *message);
 static int build_channel_close_ok(IMQP_Byte *message);
 
 /* serialization functions */
@@ -148,22 +141,19 @@ static void message_build_n(void **index, void *content, uint16_t n);
 
 uint64_t receive_and_process_frame(Connection *connection) {
   uint64_t flags = NO_ERROR;
-  if (connection->closed || connection->consumer) {
+
+  if (connection->closed) {
     return flags;
   }
+
   IMQP_Frame frame = {0};
 
-  if ((flags |= receive_frame(connection, &frame)) & ERRORS)
+  if ((flags |= receive_frame(connection, &frame)) &
+      (ERRORS | CONNECTION_ENDED))
     return flags;
 
-  if ((flags |= process_frame(connection, frame)) & ERRORS) {
-    printf("Deu pau!\n");
+  if ((flags |= process_frame(connection, frame)) & (ERRORS | CONNECTION_ENDED))
     return flags;
-  }
-
-  if (flags) {
-    printf("Alguma coisa deu errado... \n");
-  }
 
   return flags | receive_and_process_frame(connection);
 }
@@ -183,6 +173,7 @@ uint64_t process_frame(Connection *connection, IMQP_Frame frame) {
     break;
   case BODY_FRAME:
     flags |= process_body_frame(connection, frame.payload.body_pl);
+    flags |= publish(connection);
     break;
   case HEARTBEAT_FRAME:
     flags |= HEARTBEAT_IGNORED;
@@ -225,7 +216,7 @@ uint64_t process_header_frame(Connection *connection, Head_Payload payload) {
 #endif /* DEBUG_MODE */
   switch ((enum IMQP_Frame_Class)payload.class_header) {
   case BASIC_CLASS:
-    define_pub_body_size(payload.body_size);
+    connection->publication.size = payload.body_size;
     break;
   default:
     flags |= NOT_EXPECTED_CLASS;
@@ -234,13 +225,12 @@ uint64_t process_header_frame(Connection *connection, Head_Payload payload) {
 }
 
 uint64_t process_body_frame(Connection *connection, Body_Payload payload) {
-  uint64_t flags = 0;
 #ifdef DEBUG_MODE
   printf("[BODY FRAME] Body: %s\n", payload.body);
 #endif /* DEBUG_MODE */
-  define_pub_body(payload.body);
-  flags |= finish_pub();
-  return flags;
+  memcpy(connection->publication.body, payload.body,
+         connection->publication.size);
+  return NO_ERROR;
 }
 
 /*====================================*/
@@ -249,25 +239,38 @@ uint64_t process_body_frame(Connection *connection, Body_Payload payload) {
 
 uint64_t receive_frame(Connection *connection, IMQP_Frame *frame) {
   uint64_t flags = 0;
+
   flags |= receive_frame_header(connection, frame);
+
+  if (flags & (ERRORS | CONNECTION_ENDED))
+    return flags;
+
   flags |= receive_frame_payload(connection, frame);
+
+  if (flags & (ERRORS | CONNECTION_ENDED))
+    return flags;
+
   flags |= receive_frame_end(connection);
   return flags;
 }
 
 uint64_t receive_frame_header(Connection *connection, IMQP_Frame *frame) {
-  uint64_t flags = NO_ERROR;
   IMQP_Byte message[20] = {0};
-  recv(connection->socket, message, 7, MSG_WAITALL);
-  flags |= break_frame_header(message, frame);
-  return flags;
+
+  if (Recv(connection->socket, message, 7, MSG_WAITALL) == 0)
+    return CONNECTION_ENDED;
+
+  return break_frame_header(message, frame);
 }
 
 uint64_t receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
   uint64_t flags = NO_ERROR;
 
   IMQP_Byte message[frame->payload_size];
-  recv(connection->socket, message, frame->payload_size, MSG_WAITALL);
+
+  if (Recv(connection->socket, message, frame->payload_size, MSG_WAITALL) == 0)
+    return CONNECTION_ENDED;
+
   IMQP_Payload *payload = &frame->payload;
 
   switch (frame->type) {
@@ -279,7 +282,8 @@ uint64_t receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
     flags |= break_header_frame_payload(message, &payload->header_pl);
     break;
   case BODY_FRAME:
-    flags |= break_body_frame_payload(message, &payload->body_pl);
+    flags |= break_body_frame_payload(message, &payload->body_pl,
+                                      connection->publication.size);
     break;
   case HEARTBEAT_FRAME:
     flags |= HEARTBEAT_IGNORED;
@@ -290,7 +294,10 @@ uint64_t receive_frame_payload(Connection *connection, IMQP_Frame *frame) {
 
 uint64_t receive_frame_end(Connection *connection) {
   IMQP_Byte frame_end = 0;
-  recv(connection->socket, &frame_end, 1, MSG_WAITALL);
+
+  if (Recv(connection->socket, &frame_end, 1, MSG_WAITALL) == 0)
+    return CONNECTION_ENDED;
+
   if (frame_end != '\xce') {
     return INVALID_FRAME;
   }
@@ -322,8 +329,27 @@ uint64_t break_frame_header(IMQP_Byte *message, IMQP_Frame *frame) {
 /*====================================*/
 
 uint64_t receive_protocol_header(Connection *connection) {
-  char garbage[8] = {0};
-  recv(connection->socket, garbage, 8, MSG_WAITALL);
+  const char *protocol_header = PROTOCOL_HEADER;
+  char received_protocol_header[8] = {0};
+  uint8_t size;
+  if ((size = Recv(connection->socket, received_protocol_header, 8,
+                   MSG_WAITALL)) == 0)
+    return CONNECTION_ENDED;
+
+  uint8_t i = 0;
+  bool equal = true;
+
+  while (i < PROTOCOL_HEADER_SIZE && i < size) {
+    if (protocol_header[i] != received_protocol_header[i])
+      equal = false;
+    i++;
+  }
+  if (size != PROTOCOL_HEADER_SIZE)
+    equal = false;
+
+  if (!equal)
+    return INVALID_PROTOCOL_HEADER;
+
   return NO_ERROR;
 }
 
@@ -412,10 +438,8 @@ uint64_t break_frame_method_connection_arguments(IMQP_Byte *message,
         message, &payload->arguments.connection_tune_ok);
     break;
   case CONNECTION_OPEN:
-    // TODO: nothing happens here yet
     break;
   case CONNECTION_CLOSE:
-    // TODO: nothing happens here yet
     break;
   default:
     flags |= NOT_EXPECTED_METHOD;
@@ -426,12 +450,19 @@ uint64_t break_frame_method_connection_arguments(IMQP_Byte *message,
 
 uint64_t break_connection_tune_ok_arguments(IMQP_Byte *message,
                                             Connection_Tune_Ok *arguments) {
-  // TODO: verify the content from here if it matches with my connection TUNE
   void *index = arguments;
 
   arguments->channel_max = message_break_s(&index);
   arguments->frame_max = message_break_l(&index);
   arguments->heartbeat = message_break_s(&index);
+
+  const Config *config = &(son_of_a_greve.config);
+
+  if (arguments->channel_max > config->channel_max ||
+      arguments->frame_max > config->channel_max ||
+      arguments->heartbeat > config->heartbeat)
+    return INVALID_TUNE;
+
   return NO_ERROR;
 }
 
@@ -442,10 +473,8 @@ uint64_t break_frame_method_channel_arguments(IMQP_Byte *message,
   uint64_t flags = NO_ERROR;
   switch ((enum IMQP_Frame_Channel)payload->method) {
   case CHANNEL_OPEN:
-    // TODO: nothing happens here yet
     break;
   case CHANNEL_CLOSE:
-    // TODO: nothing happens here yet
     break;
   default:
     flags |= NOT_EXPECTED_METHOD;
@@ -467,6 +496,9 @@ uint64_t break_frame_method_basic_arguments(IMQP_Byte *message,
   case BASIC_PUBLISH:
     flags |= break_basic_publish_arguments(message,
                                            &payload->arguments.basic_publish);
+    break;
+  case BASIC_ACK:
+    flags |= break_basic_ack_arguments(message, &payload->arguments.basic_ack);
     break;
   default:
     flags |= NOT_EXPECTED_METHOD;
@@ -529,6 +561,16 @@ uint64_t break_basic_publish_arguments(IMQP_Byte *message,
   return NO_ERROR;
 }
 
+uint64_t break_basic_ack_arguments(IMQP_Byte *message, Basic_Ack *arguments) {
+
+  void *offset = message;
+
+  arguments->delivery_tag = message_break_ll(&offset);
+  arguments->config_flags = message_break_b(&offset);
+
+  return NO_ERROR;
+}
+
 /*====================================*/
 /* BREAKING HEADER FRAMES */
 /*====================================*/
@@ -544,6 +586,10 @@ uint64_t break_header_frame_payload(IMQP_Byte *message, Head_Payload *payload) {
 /*====================================*/
 /* SEND FRAMES */
 /*====================================*/
+
+void send_protocol_header(Connection *connection) {
+  Write(connection->socket, PROTOCOL_HEADER, PROTOCOL_HEADER_SIZE);
+}
 
 /************ QUEUE METHOD ************/
 
@@ -571,8 +617,10 @@ void send_connection_tune(Connection *connection) {
 }
 
 void send_connection_open_ok(Connection *connection) {
-  Write(connection->socket, FAKE_CONNECTION_OPEN_OK,
-        FAKE_CONNECTION_OPEN_OK_SIZE);
+  IMQP_Byte message[MAX_FRAME_SIZE];
+  int message_size = 0;
+  message_size += build_connection_open_ok(message);
+  Write(connection->socket, (const char *)message, message_size);
 }
 
 void send_connection_close_ok(Connection *connection) {
@@ -616,9 +664,14 @@ void send_basic_consume_ok(Connection *connection) {
 
 /************ CHANNEL METHOD ************/
 
-// TODO: REMOVE THIS MOCK!!
 void send_channel_open_ok(Connection *connection) {
-  Write(connection->socket, FAKE_CHANNEL_OPEN_OK, FAKE_CHANNEL_OPEN_OK_SIZE);
+  IMQP_Byte message[MAX_FRAME_SIZE];
+
+  int message_size = 0;
+
+  message_size += build_channel_open_ok(message);
+
+  Write(connection->socket, (const char *)message, message_size);
 }
 
 void send_channel_close_ok(Connection *connection) {
@@ -681,9 +734,10 @@ int build_connection_tune(IMQP_Byte *message, Connection *connection) {
   const Config *config = &(son_of_a_greve.config);
 
   /* + 1 because of name size */
-  uint32_t payload_size = sizeof(class) + sizeof(method) + sizeof(config->channel_max) +
-    sizeof(config->frame_max) + sizeof(config->heartbeat);
-                          
+  uint32_t payload_size = sizeof(class) + sizeof(method) +
+                          sizeof(config->channel_max) +
+                          sizeof(config->frame_max) + sizeof(config->heartbeat);
+
   void *offset = message;
 
   message_build_b(&offset, type);
@@ -716,19 +770,19 @@ int build_connection_start(IMQP_Byte *message, Connection *connection) {
 
   const Meta *meta = &(son_of_a_greve.meta);
 
-  uint32_t properties_size = 1 + strlen(str_cluster_name) + 1 + 4 + strlen(meta->cluster_name) +
-      1 + strlen(str_license) + 1 + 4 + strlen(meta->license) +
-      1 + strlen(str_product) + 1 + 4 + strlen(meta->product);
+  uint32_t properties_size =
+      1 + strlen(str_cluster_name) + 1 + 4 + strlen(meta->cluster_name) + 1 +
+      strlen(str_license) + 1 + 4 + strlen(meta->license) + 1 +
+      strlen(str_product) + 1 + 4 + strlen(meta->product);
 
-  uint32_t arguments_size =
-      sizeof(meta->major_version) + sizeof(meta->major_version) + 4 +
-      properties_size +
-      4 + strlen(meta->mechanisms) +
-      4 + strlen(meta->locales);
+  uint32_t arguments_size = sizeof(meta->major_version) +
+                            sizeof(meta->major_version) + 4 + properties_size +
+                            4 + strlen(meta->mechanisms) + 4 +
+                            strlen(meta->locales);
 
   /* + 1 because of name size */
   uint32_t payload_size = sizeof(class) + sizeof(method) + arguments_size;
-                          
+
   void *offset = message;
 
   message_build_b(&offset, type);
@@ -744,32 +798,55 @@ int build_connection_start(IMQP_Byte *message, Connection *connection) {
   message_build_l(&offset, properties_size);
 
   message_build_b(&offset, strlen(str_cluster_name));
-  message_build_n(&offset, (void*)str_cluster_name, strlen(str_cluster_name));
+  message_build_n(&offset, (void *)str_cluster_name, strlen(str_cluster_name));
   message_build_b(&offset, 'S');
   message_build_l(&offset, strlen(meta->cluster_name));
-  message_build_n(&offset, (void*)meta->cluster_name, strlen(meta->cluster_name));
+  message_build_n(&offset, (void *)meta->cluster_name,
+                  strlen(meta->cluster_name));
 
   message_build_b(&offset, strlen(str_license));
-  message_build_n(&offset, (void*)str_license, strlen(str_license));
+  message_build_n(&offset, (void *)str_license, strlen(str_license));
   message_build_b(&offset, 'S');
   message_build_l(&offset, strlen(meta->license));
-  message_build_n(&offset, (void*)meta->license, strlen(meta->license));
+  message_build_n(&offset, (void *)meta->license, strlen(meta->license));
 
   message_build_b(&offset, strlen(str_product));
-  message_build_n(&offset, (void*)str_product, strlen(str_product));
+  message_build_n(&offset, (void *)str_product, strlen(str_product));
   message_build_b(&offset, 'S');
   message_build_l(&offset, strlen(meta->product));
-  message_build_n(&offset, (void*)meta->product, strlen(meta->product));
+  message_build_n(&offset, (void *)meta->product, strlen(meta->product));
 
   message_build_l(&offset, strlen(meta->mechanisms));
-  message_build_n(&offset, (void*)meta->mechanisms, strlen(meta->mechanisms));
+  message_build_n(&offset, (void *)meta->mechanisms, strlen(meta->mechanisms));
 
   message_build_l(&offset, strlen(meta->locales));
-  message_build_n(&offset, (void*)meta->locales, strlen(meta->locales));
+  message_build_n(&offset, (void *)meta->locales, strlen(meta->locales));
 
   message_build_b(&offset, FRAME_END);
 
   return offset - (void *)message;
+}
+
+int build_connection_open_ok(IMQP_Byte *message) {
+  uint8_t type = METHOD_FRAME;
+  uint16_t channel = BASE_COMMUNICATION_CHANNEL;
+
+  uint16_t class = CONNECTION_CLASS;
+  uint16_t method = CONNECTION_OPEN_OK;
+
+  uint32_t payload_size = sizeof(class) + sizeof(method) + 1;
+
+  void *index = message;
+
+  message_build_b(&index, type);
+  message_build_s(&index, channel);
+  message_build_l(&index, payload_size);
+  message_build_s(&index, class);
+  message_build_s(&index, method);
+  message_build_b(&index, 0);
+  message_build_b(&index, FRAME_END);
+
+  return index - (void *)message;
 }
 
 int build_connection_close_ok(IMQP_Byte *message) {
@@ -902,6 +979,28 @@ int build_basic_deliver_body(IMQP_Byte *message, IMQP_Byte *body,
 
 /************ CHANNEL METHOD ************/
 
+int build_channel_open_ok(IMQP_Byte *message) {
+  uint8_t type = METHOD_FRAME;
+  uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
+
+  uint16_t class = CHANNEL_CLASS;
+  uint16_t method = CHANNEL_OPEN_OK;
+
+  uint32_t payload_size = sizeof(class) + sizeof(method) + 4;
+
+  void *offset = message;
+
+  message_build_b(&offset, type);
+  message_build_s(&offset, channel);
+  message_build_l(&offset, payload_size);
+  message_build_s(&offset, class);
+  message_build_s(&offset, method);
+  message_build_l(&offset, 0);
+  message_build_b(&offset, FRAME_END);
+
+  return offset - (void *)message;
+}
+
 int build_channel_close_ok(IMQP_Byte *message) {
   uint8_t type = METHOD_FRAME;
   uint16_t channel = UNIQUE_COMMUNICATION_CHANNEL;
@@ -927,9 +1026,9 @@ int build_channel_close_ok(IMQP_Byte *message) {
 /* BREAKING BODY FRAMES */
 /*====================================*/
 
-uint64_t break_body_frame_payload(IMQP_Byte *message, Body_Payload *payload) {
+uint64_t break_body_frame_payload(IMQP_Byte *message, Body_Payload *payload,
+                                  uint64_t pub_size) {
   void *offset = message;
-  int pub_size = get_pub_size();
   message_break_n(payload->body, &offset, pub_size);
   payload->body[pub_size] = '\x00';
   return NO_ERROR;

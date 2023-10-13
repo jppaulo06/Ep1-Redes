@@ -7,7 +7,7 @@ ARFLAGS= -rcv
 ################################
 
 CLASSES=Channel.o Connection.o Frame.o Queue.o Basic.o
-OBJS=${CLASSES} fake_payloads.o super_functions.o Flags.o
+OBJS=${CLASSES} super_functions.o Flags.o
 LIB=imqp_functions.a
 MAIN=ep1_main.c
 

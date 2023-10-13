@@ -41,6 +41,12 @@ void print_errors(uint64_t flags) {
     case INVALID_TUNE:
       fprintf(stderr, "[ERROR] Received invalid configs at connection Tune\n");
       break;
+    case INVALID_PROTOCOL_HEADER:
+      fprintf(stderr, "[ERROR] Received invalid protocol header\n");
+      break;
+    case CONSUME_TO_INVALID_QUEUE:
+      fprintf(stderr, "[ERROR] Consume to queue does not exist\n");
+      break;
     case NO_ERROR:
       break;
     }
@@ -48,13 +54,16 @@ void print_errors(uint64_t flags) {
 }
 
 void print_warnings(uint64_t flags) {
-  for (uint64_t warning = FIRST_ERROR; warning != LAST_ERROR; warning <<= 1) {
+  for (uint64_t warning = FIRST_WARNING; warning != LAST_WARNING; warning <<= 1) {
     switch ((enum Warning)(warning & flags)) {
       case QUEUE_NOT_FOUND_OR_EMPTY:
         fprintf(stderr, "[WARNING] Queue not found or is empty\n");
         break;
       case HEARTBEAT_IGNORED:
         fprintf(stderr, "[WARNING] Heartbeat (not supported) received\n");
+        break;
+      case QUEUE_NAME_ALREADY_EXISTS:
+        fprintf(stderr, "[WARNING] Failed to create queue. Queue name already exists\n");
         break;
     case NO_WARNING:
       break;

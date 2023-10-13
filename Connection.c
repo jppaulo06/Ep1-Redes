@@ -1,5 +1,5 @@
-#include <strings.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -29,29 +29,22 @@ static uint64_t process_connection_tune_ok(Connection *connection,
 /* PUBLIC FUNCTIONS DEFINITIONS */
 /*====================================*/
 
-void process_connection(int connfd) {
+void *process_connection(void *fd) {
+  uint64_t connfd = (uint64_t)fd;
   uint64_t flags = 0;
   Connection *connection = new_AMQP_Connection(connfd);
 
   flags |= init_connection(connection);
 
-  if (flags & ERRORS)
-    close_connection(connection);
+  if (!(flags & (ERRORS | CONNECTION_ENDED)))
+    flags |= receive_and_process_frame(connection);
 
-  flags |= receive_and_process_frame(connection);
-
-  if (flags & ERRORS)
-    close_connection(connection);
-
-  if (connection->closed) {
-    free(connection);
-  }
-
-  if(flags){
-    printf("Alguma coisa deu errado... \n");
-  }
+  close_connection(connection);
+  free(connection);
 
   print_errors_or_warnings(flags);
+
+  return NULL;
 }
 
 uint64_t process_frame_connection(Connection *connection,
@@ -71,6 +64,7 @@ uint64_t process_frame_connection(Connection *connection,
   case CONNECTION_CLOSE:
     send_connection_close_ok(connection);
     close_connection(connection);
+    flags |= CONNECTION_ENDED;
     break;
   default:
     flags |= NOT_EXPECTED_METHOD;
@@ -93,10 +87,14 @@ uint64_t process_connection_tune_ok(Connection *connection,
   connection->config.frame_max = arguments.frame_max;
   connection->config.heartbeat = arguments.heartbeat;
 
-  if(connection->config.channel_max > son_of_a_greve.config.channel_max || connection->config.frame_max > son_of_a_greve.config.frame_max ||
-      connection->config.heartbeat > son_of_a_greve.config.heartbeat){
+  const Config *config = &(son_of_a_greve.config);
+
+  if (connection->config.channel_max > config->channel_max ||
+      connection->config.frame_max > config->frame_max ||
+      connection->config.heartbeat > config->heartbeat) {
     return INVALID_TUNE;
   }
+
   return NO_ERROR;
 }
 
@@ -121,8 +119,20 @@ Connection *new_AMQP_Connection(int socket) {
 }
 
 uint64_t init_connection(Connection *connection) {
-  uint64_t flags = 0;
+  uint64_t flags = NO_ERROR;
+
   flags |= receive_protocol_header(connection);
+
+  if (flags & CONNECTION_ENDED)
+    return flags;
+
+  if (flags & INVALID_PROTOCOL_HEADER) {
+    send_protocol_header(connection);
+    flags = receive_protocol_header(connection);
+    if (flags)
+      return flags;
+  }
+
   send_connection_start(connection);
   return flags;
 }
